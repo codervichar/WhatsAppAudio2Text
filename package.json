@@ -8,11 +8,14 @@
     "dev": "vite",
     "start": "vite",
     "build": "vite build",
+    "build:ec2": "NODE_OPTIONS='--max-old-space-size=512' vite build",
+    "build:ec2-fast": "NODE_OPTIONS='--max-old-space-size=512' vite build --mode production",
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "type-check": "tsc --noEmit",
-    "clean": "rm -rf node_modules dist"
+    "clean": "rm -rf node_modules dist",
+    "clean:cache": "rm -rf node_modules/.vite"
   },
   "dependencies": {
     "lucide-react": "^0.344.0",
