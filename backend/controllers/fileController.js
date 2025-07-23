@@ -42,17 +42,36 @@ const uploadFile = async (req, res) => {
         file.path,
         file.size,
         file.mimetype,
-        'pending'
+        'uploaded'
       ]
     );
 
     const fileId = result.insertId;
 
+    // Create transcription record
+    const [transcriptionResult] = await pool.execute(
+      `INSERT INTO transcriptions 
+       (user_id, audio_file_id, original_filename, file_path, file_size, mime_type, duration, status) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId,
+        fileId,
+        file.originalname,
+        file.path,
+        file.size,
+        file.mimetype,
+        '0:00', // Default duration, will be updated when transcription is processed
+        'pending'
+      ]
+    );
+
+    const transcriptionId = transcriptionResult.insertId;
+
     // Here you would typically trigger the transcription process
     // For now, we'll simulate it by updating the status to "processing"
     await pool.execute(
-      'UPDATE audio_files SET status = ? WHERE id = ?',
-      ['processing', fileId]
+      'UPDATE transcriptions SET status = ? WHERE id = ?',
+      ['processing', transcriptionId]
     );
 
     res.status(201).json({
@@ -65,6 +84,10 @@ const uploadFile = async (req, res) => {
           original_name: file.originalname,
           file_size: file.size,
           mime_type: file.mimetype,
+          status: 'uploaded'
+        },
+        transcription: {
+          id: transcriptionId,
           status: 'processing'
         }
       }
@@ -250,31 +273,32 @@ const transcribeFile = async (req, res) => {
     const userId = req.user.id;
     const fileId = req.params.id;
 
-    const [files] = await pool.execute(
-      'SELECT id, status FROM audio_files WHERE id = ? AND user_id = ?',
+    // Get the transcription record for this file
+    const [transcriptions] = await pool.execute(
+      'SELECT id, status FROM transcriptions WHERE audio_file_id = ? AND user_id = ?',
       [fileId, userId]
     );
 
-    if (files.length === 0) {
+    if (transcriptions.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'File not found'
+        message: 'Transcription not found'
       });
     }
 
-    const file = files[0];
+    const transcription = transcriptions[0];
 
-    if (file.status === 'processing') {
+    if (transcription.status === 'processing') {
       return res.status(400).json({
         success: false,
-        message: 'File is already being processed'
+        message: 'Transcription is already being processed'
       });
     }
 
     // Update status to processing
     await pool.execute(
-      'UPDATE audio_files SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      ['processing', fileId]
+      'UPDATE transcriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      ['processing', transcription.id]
     );
 
     // Here you would trigger the actual transcription service

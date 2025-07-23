@@ -100,7 +100,9 @@ const validateProfileUpdate = (req, res, next) => {
   const schema = Joi.object({
     first_name: Joi.string().min(2).max(50).optional(),
     last_name: Joi.string().min(2).max(50).optional(),
+    email: Joi.string().email().optional(),
     phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).optional(),
+    password: Joi.string().min(6).max(128).optional(),
     language: Joi.string().valid(
       'ar', 'az', 'zh', 'zh-TW', 'da', 'de', 'el', 
       'en', 'es', 'fa', 'fr', 'he', 'id', 'it', 

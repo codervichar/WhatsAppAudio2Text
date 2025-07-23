@@ -12,6 +12,9 @@ const { testConnection } = require('./config/database');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const fileRoutes = require('./routes/files');
+const webhookRoutes = require('./routes/webhook');
+const stripeRoutes = require('./routes/stripe');
+const transcriptionRoutes = require('./routes/transcriptions');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -82,6 +85,9 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/webhook', webhookRoutes);
+app.use('/api/stripe', stripeRoutes);
+app.use('/api/transcriptions', transcriptionRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -203,3 +209,6 @@ if (require.main === module) {
 }
 
 module.exports = app; 
+
+// ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '62gb$t0/<Yb+';
+// FLUSH PRIVILEGES;

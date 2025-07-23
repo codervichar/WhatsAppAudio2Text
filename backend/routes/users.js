@@ -1,13 +1,18 @@
 const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const { validateProfileUpdate } = require('../middleware/validation');
+const Language = require('../models/language');
+const Country = require('../models/country');
 
 // Import controller functions
 const {
   getProfile,
   updateProfile,
   getStats,
-  deleteAccount
+  deleteAccount,
+  getLanguages,
+  getCountries,
+  updateWhatsAppTranscript
 } = require('../controllers/userController');
 
 const router = express.Router();
@@ -31,5 +36,20 @@ router.get('/stats', authenticateToken, getStats);
 // @desc    Delete user account
 // @access  Private
 router.delete('/account', authenticateToken, deleteAccount);
+
+// @route   GET /api/users/languages
+// @desc    Get all languages
+// @access  Public
+router.get('/languages', getLanguages);
+
+// @route   GET /api/users/countries
+// @desc    Get all countries
+// @access  Public
+router.get('/countries', getCountries);
+
+// @route   POST /api/users/update-profile
+// @desc    Update WhatsApp transcript info (was /whatsapp-transcription)
+// @access  Private
+router.post('/update-profile', authenticateToken, updateWhatsAppTranscript);
 
 module.exports = router; 
