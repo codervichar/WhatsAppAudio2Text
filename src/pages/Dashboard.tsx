@@ -241,51 +241,52 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* WhatsApp Transcript Section */}
-      <section className="relative bg-gradient-to-br from-white to-gray-50 py-20">
-        <div className="container mx-auto px-4 mb-16">
-        <div className="flex flex-col lg:flex-row gap-10 max-w-7xl mx-auto">
+      <section className="relative bg-gradient-to-br from-white to-gray-50 py-8">
+        <div className="compact-container mb-8">
+        <div className="flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto">
           {/* Left: Form */}
-          <form className="flex-1 bg-white rounded-3xl shadow-2xl p-10 flex flex-col gap-8 border border-gray-100" onSubmit={handleWaSave}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center">
-                <MessageCircle className="w-6 h-6 text-white" />
+          <form className="flex-1 bg-white rounded-xl shadow-lg p-6 flex flex-col gap-4 border border-gray-100" onSubmit={handleWaSave}>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center">
+                <MessageCircle className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">WhatsApp Transcript</h2>
-                <p className="text-gray-500 text-sm">Configure your WhatsApp integration</p>
+                <h2 className="text-lg font-bold text-gray-900">WhatsApp Transcript</h2>
+                <p className="text-gray-500 text-xs">Configure your WhatsApp integration</p>
               </div>
-              <span className="ml-auto px-3 py-1 text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-full">BETA</span>
+              <span className="ml-auto px-2 py-0.5 text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-full">BETA</span>
             </div>
             
             {waAlert && (
-              <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-2xl flex items-center">
-                <svg className="w-5 h-5 mr-3 text-yellow-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12A9 9 0 11 3 12a9 9 0 0118 0z" /></svg>
-                <span className="text-yellow-800 font-medium">Please make sure you have entered valid WhatsApp number.</span>
+              <div className="p-3 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg flex items-center">
+                <svg className="w-4 h-4 mr-2 text-yellow-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12A9 9 0 11 3 12a9 9 0 0118 0z" /></svg>
+                <span className="text-yellow-800 font-medium text-sm">Please make sure you have entered valid WhatsApp number.</span>
               </div>
             )}
-          <div className="space-y-6">
+          
             <div>
-              <label className="block font-semibold text-gray-700 mb-4 text-lg">WhatsApp Number</label>
-              <div className="flex flex-col lg:flex-row gap-4">
+              <label className="block font-semibold text-gray-700 mb-2 text-sm">WhatsApp Number</label>
+              <div className="flex flex-col lg:flex-row gap-3">
                 {/* Searchable Country Dropdown */}
-                <div className="relative lg:min-w-[220px]">
-                  <label className="block text-sm text-gray-600 mb-2">Country Code</label>
+                <div className="relative lg:min-w-[160px]">
+                  <label className="block text-xs text-gray-600 mb-1">Country Code</label>
                   <button
                     type="button"
                     onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                    className="w-full flex items-center justify-between border-2 border-gray-200 rounded-2xl px-4 py-4 bg-gray-50 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300 hover:border-gray-300"
+                    className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 text-sm"
                   >
                     <span className="text-left text-gray-700 font-medium">
                       {selectedCountry ? `+${selectedCountry.phonecode} ${selectedCountry.label}` : 'Select Country'}
                     </span>
-                    <ChevronDown size={20} className="text-gray-400" />
+                    <ChevronDown size={16} className="text-gray-400" />
                   </button>
+                  
                   {isCountryDropdownOpen && (
-                    <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-2xl shadow-2xl max-h-60 overflow-hidden">
+                    <div className="absolute z-[9999] w-64 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-hidden transform -translate-x-1/2 left-1/2">
                       {/* Search Input */}
-                      <div className="p-3 border-b border-gray-200">
+                      <div className="p-2 border-b border-gray-100 bg-gray-50">
                         <div className="relative">
-                          <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                          <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" />
                           <input
                             type="text"
                             placeholder="Search countries..."
@@ -295,46 +296,55 @@ const Dashboard: React.FC = () => {
                               setHighlightedIndex(-1);
                             }}
                             onKeyDown={handleKeyDown}
-                            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-gray-50"
+                            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs bg-white"
                             autoFocus
                           />
                         </div>
                       </div>
                       {/* Country List */}
-                      <div className="max-h-48 overflow-y-auto">
+                      <div className="max-h-36 overflow-y-auto custom-scrollbar">
                         {filteredCountries.length > 0 ? (
                           filteredCountries.map((country, index) => (
                             <button
                               key={country.code}
                               type="button"
                               onClick={() => handleCountrySelect(country)}
-                              className={`w-full text-left px-4 py-3 focus:outline-none text-base rounded-xl transition-colors ${
+                              className={`w-full text-left px-2 py-1.5 focus:outline-none text-xs transition-colors border-b border-gray-50 last:border-b-0 ${
                                 index === highlightedIndex
-                                  ? 'bg-blue-100 text-blue-900'
-                                  : 'hover:bg-gray-100'
+                                  ? 'bg-blue-50 text-blue-900'
+                                  : 'hover:bg-gray-50'
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="font-medium">+{country.phonecode} {country.label}</span>
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-semibold text-gray-900">+{country.phonecode}</span>
+                                  <span className="text-xs text-gray-600 truncate">{country.label}</span>
+                                </div>
+                                {selectedCountry?.code === country.code && (
+                                  <CheckCircle size={12} className="text-blue-600 flex-shrink-0" />
+                                )}
                               </div>
                             </button>
                           ))
                         ) : (
-                          <div className="px-4 py-3 text-gray-500 text-base">No countries found</div>
+                          <div className="px-2 py-3 text-center text-gray-500 text-xs">
+                            <Search size={16} className="mx-auto mb-1 text-gray-300" />
+                            No countries found
+                          </div>
                         )}
                       </div>
                     </div>
                   )}
                 </div>
-                {/* Mobile Number Input */}
+
                 <div className="flex-1">
-                  <label htmlFor="waNumber" className="block text-sm text-gray-600 mb-2">Mobile Number</label>
+                  <label htmlFor="waNumber" className="block text-xs text-gray-600 mb-1">Mobile Number</label>
                   <input
                     id="waNumber"
                     type="text"
                     value={waNumber}
                     onChange={e => setWaNumber(e.target.value.replace(/\D/g, ''))}
-                    className="w-full border-2 border-gray-200 rounded-2xl px-4 py-4 bg-gray-50 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300 text-base font-medium hover:border-gray-300"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm font-medium hover:border-gray-300"
                     placeholder="Enter mobile number (without country code)"
                     maxLength={15}
                   />
@@ -343,11 +353,11 @@ const Dashboard: React.FC = () => {
             </div>
             
             <div>
-              <label className="block font-semibold text-gray-700 mb-4 text-lg">Expected Transcript Language</label>
+              <label className="block font-semibold text-gray-700 mb-2 text-sm">Expected Transcript Language</label>
               <select 
                 value={waLang} 
                 onChange={e => setWaLang(Number(e.target.value))} 
-                className="w-full border-2 border-gray-200 rounded-2xl px-4 py-4 bg-gray-50 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300 text-base font-medium hover:border-gray-300"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm font-medium hover:border-gray-300"
               >
                 <option value="">Select Language</option>
                 {languageOptions.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
@@ -356,41 +366,40 @@ const Dashboard: React.FC = () => {
             
             <button 
               type="submit" 
-              className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-5 rounded-2xl font-bold text-lg shadow-lg hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-100 mt-4"
+              className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2.5 rounded-lg font-semibold text-sm shadow-md hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-100 mt-2"
             >
               Save & Update Configuration
             </button>
-          </div>
-        </form>
+          </form>
         
         {/* Right: QR Code */}
-        <div className="flex-1 bg-white rounded-3xl p-10 flex flex-col items-center border border-gray-100 shadow-2xl">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg">
-              <Upload className="w-10 h-10 text-white" />
+        <div className="flex-1 bg-white rounded-xl p-6 flex flex-col items-center border border-gray-100 shadow-lg">
+          <div className="text-center mb-4">
+            <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center mb-3 mx-auto shadow-md">
+              <Upload className="w-6 h-6 text-white" />
             </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-3">Scan QR Code</h3>
-            <p className="text-gray-600 text-lg">Send audio messages through WhatsApp for transcription</p>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Scan QR Code</h3>
+            <p className="text-gray-600 text-sm">Send audio messages through WhatsApp for transcription</p>
           </div>
           
-          <div className="bg-gradient-to-br from-gray-50 to-white p-8 rounded-3xl border-2 border-gray-200 mb-8 shadow-lg">
-            <img src={waQr} alt="WhatsApp QR Code" className="w-56 h-56 rounded-2xl shadow-lg" />
+          <div className="bg-gradient-to-br from-gray-50 to-white p-4 rounded-lg border border-gray-200 mb-4 shadow-md">
+            <img src={waQr} alt="WhatsApp QR Code" className="w-40 h-40 rounded-lg shadow-md" />
           </div>
           
           <a 
             href="https://wa.me/18587077403" 
             target="_blank" 
             rel="noopener noreferrer" 
-            className="inline-flex items-center gap-3 px-10 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-2xl shadow-lg hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:scale-105 font-semibold text-xl"
+            className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg shadow-md hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105 font-semibold text-sm"
           >
-            <MessageCircle className="w-6 h-6" />
+            <MessageCircle className="w-4 h-4" />
             Open in WhatsApp
           </a>
           
-          <div className="mt-8 p-6 bg-blue-50 rounded-2xl border border-blue-200">
-            <div className="flex items-center gap-3 text-blue-700">
-              <Shield className="w-5 h-5" />
-              <span className="font-medium text-base">File size limit: 16 MB (WhatsApp limitation)</span>
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-center gap-2 text-blue-700">
+              <Shield className="w-4 h-4" />
+              <span className="font-medium text-xs">File size limit: 16 MB (WhatsApp limitation)</span>
             </div>
           </div>
         </div>

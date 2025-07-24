@@ -140,7 +140,7 @@ const TranscriptionHistory: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+    <div className="min-h-screen gradient-bg">
       <Helmet>
         <title>Transcription History - WhatsApp2Text</title>
         <meta name="description" content="View your transcription history from WhatsApp2Text." />
@@ -148,29 +148,29 @@ const TranscriptionHistory: React.FC = () => {
       
       {/* Header */}
       <div className="bg-gradient-to-r from-white via-blue-50/30 to-purple-50/30 backdrop-blur-xl border-b border-gray-200/50 sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-6">
+        <div className="compact-container py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-6">
+            <div className="flex items-center space-x-4">
               <Link 
                 to="/dashboard" 
-                className="flex items-center text-gray-600 hover:text-blue-600 transition-all duration-300 transform hover:scale-105"
+                className="flex items-center text-gray-600 hover:text-blue-600 transition-all duration-200 transform hover:scale-105"
               >
-                <div className="w-10 h-10 bg-gray-100 hover:bg-blue-100 rounded-xl flex items-center justify-center transition-colors duration-300">
-                  <ArrowLeft className="w-5 h-5" />
+                <div className="w-8 h-8 bg-gray-100 hover:bg-blue-100 rounded-lg flex items-center justify-center transition-colors duration-200">
+                  <ArrowLeft className="w-4 h-4" />
                 </div>
-                <span className="font-semibold ml-3">Back to Dashboard</span>
+                <span className="font-semibold ml-2 text-sm">Back to Dashboard</span>
               </Link>
-              <div className="h-8 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
+              <div className="h-6 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   Transcription History
                 </h1>
-                <p className="text-gray-500 text-sm mt-1">Manage and view all your audio transcriptions</p>
+                <p className="text-gray-500 text-xs mt-1">Manage and view all your audio transcriptions</p>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
-              <button className="p-3 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all duration-300 transform hover:scale-105">
-                <Share2 className="w-5 h-5" />
+            <div className="flex items-center space-x-2">
+              <button className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all duration-200 transform hover:scale-105">
+                <Share2 className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -178,17 +178,17 @@ const TranscriptionHistory: React.FC = () => {
       </div>
 
               {/* Search and Filter Bar */}
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+        <div className="compact-container py-4">
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
             {/* Search Bar */}
             <div className="flex-1 relative group">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 group-focus-within:text-blue-500 transition-colors duration-200" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 group-focus-within:text-blue-500 transition-colors duration-200" />
               <input
                 type="text"
                 placeholder="Search transcriptions by filename or content..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-white border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md"
+                className="w-full pl-10 pr-3 py-2.5 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all duration-200 shadow-sm hover:shadow-md text-sm"
               />
             </div>
             
@@ -197,46 +197,46 @@ const TranscriptionHistory: React.FC = () => {
               <select
                 value={selectedFilter}
                 onChange={(e) => setSelectedFilter(e.target.value)}
-                className="appearance-none bg-white border-2 border-gray-200 rounded-2xl px-4 py-4 pr-12 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md cursor-pointer"
+                className="appearance-none bg-white border border-gray-200 rounded-lg px-3 py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer text-sm"
               >
                 <option value="all">All Status</option>
                 <option value="completed">✅ Completed</option>
                 <option value="processing">⏳ Processing</option>
                 <option value="failed">❌ Failed</option>
               </select>
-              <Filter className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none group-focus-within:text-blue-500 transition-colors duration-200" />
+              <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none group-focus-within:text-blue-500 transition-colors duration-200" />
             </div>
           </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 shadow-lg border border-blue-200 transform hover:scale-105 transition-all duration-300">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 shadow-md border border-blue-200 transform hover:scale-105 transition-all duration-200">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-blue-700 mb-1">Total Files</p>
-                <p className="text-3xl font-bold text-blue-900">{stats.total}</p>
+                <p className="text-xs font-semibold text-blue-700 mb-1">Total Files</p>
+                <p className="text-2xl font-bold text-blue-900">{stats.total}</p>
                 <p className="text-xs text-blue-600 mt-1">All time</p>
               </div>
-              <div className="w-14 h-14 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg">
-                <FileText className="w-7 h-7 text-white" />
+              <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center shadow-md">
+                <FileText className="w-5 h-5 text-white" />
               </div>
             </div>
           </div>
           
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-6 shadow-lg border border-green-200 transform hover:scale-105 transition-all duration-300">
+          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 shadow-md border border-green-200 transform hover:scale-105 transition-all duration-200">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-green-700 mb-1">Completed</p>
-                <p className="text-3xl font-bold text-green-900">{stats.completed}</p>
+                <p className="text-xs font-semibold text-green-700 mb-1">Completed</p>
+                <p className="text-2xl font-bold text-green-900">{stats.completed}</p>
                 <p className="text-xs text-green-600 mt-1">Successfully processed</p>
               </div>
-              <div className="w-14 h-14 bg-green-500 rounded-xl flex items-center justify-center shadow-lg">
-                <CheckCircle className="w-7 h-7 text-white" />
+              <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center shadow-md">
+                <CheckCircle className="w-5 h-5 text-white" />
               </div>
             </div>
           </div>
           
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-6 shadow-lg border border-purple-200 transform hover:scale-105 transition-all duration-300">
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 shadow-md border border-purple-200 transform hover:scale-105 transition-all duration-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-purple-700 mb-1">Processing</p>

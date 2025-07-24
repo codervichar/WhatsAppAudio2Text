@@ -27,7 +27,7 @@ interface SignupData {
   email: string;
   phone_number?: string;
   password: string;
-  language: string;
+  language?: string;
 }
 
 interface LoginData {

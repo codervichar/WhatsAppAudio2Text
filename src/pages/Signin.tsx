@@ -33,64 +33,84 @@ const Signin: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 sm:py-12">
+    <div className="gradient-bg min-h-screen flex items-center justify-center compact-section">
       <Helmet>
         <title>Sign In - WhatsApp2Text</title>
         <meta name="description" content="Sign in to your WhatsApp2Text account to manage your subscription and access your transcriptions." />
       </Helmet>
-      <h1 className="text-2xl sm:text-3xl font-bold mb-8 text-center">Sign In to WhatsApp2Text</h1>
-      <form onSubmit={handleSubmit} className="max-w-md mx-auto bg-white p-6 sm:p-8 rounded-lg shadow-md">
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md flex items-center">
-            <AlertCircle size={20} className="mr-2" />
-            {error}
-          </div>
-        )}
-        
-        <div className="mb-4">
-          <label htmlFor="email" className="block text-gray-700 font-bold mb-2">Email</label>
-          <div className="flex items-center border rounded-md">
-            <User size={20} className="ml-2 text-gray-400" />
-            <input
-              type="email"
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-2 pl-3 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
+      
+      <div className="compact-container">
+        <div className="form-container">
+          <h1 className="compact-header">Welcome Back</h1>
+          <p className="text-center text-gray-600 text-compact mb-6">Sign in to your account</p>
+          
+          {error && (
+            <div className="alert-compact bg-red-50 border border-red-200 text-red-700 flex items-center">
+              <AlertCircle size={16} className="mr-2 flex-shrink-0" />
+              <span className="text-compact">{error}</span>
+            </div>
+          )}
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="form-group-compact">
+              <label htmlFor="email" className="form-label">Email</label>
+              <div className="relative">
+                <User size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <input
+                  type="email"
+                  id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="form-input pl-10"
+                  placeholder="Enter your email address"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
+            
+            <div className="form-group-compact">
+              <label htmlFor="password" className="form-label">Password</label>
+              <div className="relative">
+                <Lock size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <input
+                  type="password"
+                  id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="form-input pl-10"
+                  placeholder="Enter your password"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
+            
+            <button 
+              type="submit" 
               disabled={isLoading}
-            />
+              className="form-button"
+            >
+              {isLoading ? 'Signing In...' : 'Sign In'}
+            </button>
+          </form>
+          
+          <div className="mt-4 text-center">
+            <Link to="/forgot-password" className="text-blue-600 hover:text-blue-800 text-compact font-medium">
+              Forgot Password?
+            </Link>
+          </div>
+          
+          <div className="mt-4 text-center">
+            <p className="text-compact text-gray-600">
+              Don't have an account?{' '}
+              <Link to="/signup" className="text-blue-600 hover:text-blue-800 font-medium">
+                Sign Up
+              </Link>
+            </p>
           </div>
         </div>
-        <div className="mb-6">
-          <label htmlFor="password" className="block text-gray-700 font-bold mb-2">Password</label>
-          <div className="flex items-center border rounded-md">
-            <Lock size={20} className="ml-2 text-gray-400" />
-            <input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-2 pl-3 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              disabled={isLoading}
-            />
-          </div>
-        </div>
-        <button 
-          type="submit" 
-          disabled={isLoading}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300 disabled:bg-blue-400 disabled:cursor-not-allowed"
-        >
-          {isLoading ? 'Signing In...' : 'Sign In'}
-        </button>
-        <div className="mt-4 text-center text-sm">
-          <Link to="/forgot-password" className="text-blue-600 hover:text-blue-800">Forgot Password?</Link>
-        </div>
-        <p className="mt-4 text-center text-sm">
-          Don't have an account? <Link to="/signup" className="text-blue-600 hover:text-blue-800">Sign Up</Link>
-        </p>
-      </form>
+      </div>
     </div>
   )
 }

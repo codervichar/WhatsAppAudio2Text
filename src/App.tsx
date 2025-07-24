@@ -26,9 +26,9 @@ function App() {
     <HelmetProvider>
       <AuthProvider>
         <Router>
-          <div className="flex flex-col min-h-screen bg-gray-100">
+          <div className="flex flex-col min-h-screen gradient-bg">
             <Header />
-            <main className="flex-grow pt-20">
+            <main className="flex-grow pt-16">
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route 

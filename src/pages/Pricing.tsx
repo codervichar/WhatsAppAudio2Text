@@ -33,46 +33,46 @@ const PricingTier: React.FC<PricingTierProps> = ({
   onSubscribe,
   isLoading
 }) => (
-  <div className={`relative bg-white p-10 rounded-3xl shadow-2xl border border-gray-100 flex flex-col items-center transition-all duration-300 hover:scale-105 hover:shadow-3xl ${
+  <div className={`relative bg-white p-6 rounded-xl shadow-lg border border-gray-100 flex flex-col items-center transition-all duration-200 hover:scale-105 hover:shadow-xl ${
     highlight 
-      ? 'ring-4 ring-purple-200 bg-gradient-to-br from-white to-purple-50' 
-      : 'hover:ring-2 hover:ring-blue-200'
+      ? 'ring-2 ring-purple-200 bg-gradient-to-br from-white to-purple-50' 
+      : 'hover:ring-1 hover:ring-blue-200'
   }`}
-    style={{ minHeight: 520 }}>
+    style={{ minHeight: 400 }}>
     {highlight && (
-      <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-blue-500 text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg">
-        <div className="flex items-center gap-2">
-          <Crown className="w-4 h-4" />
+      <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-blue-500 text-white px-4 py-1 rounded-full text-xs font-bold shadow-md">
+        <div className="flex items-center gap-1">
+          <Crown className="w-3 h-3" />
           Most Popular
         </div>
       </div>
     )}
     
-    <div className={`w-20 h-20 rounded-2xl flex items-center justify-center mb-8 ${
+    <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${
       highlight 
         ? 'bg-gradient-to-br from-purple-500 to-blue-500' 
         : 'bg-gradient-to-br from-blue-500 to-blue-600'
-    } shadow-lg`}>
+    } shadow-md`}>
       <div className="text-white">{icon}</div>
     </div>
     
-    <h3 className="text-3xl font-bold mb-4 text-center text-gray-900">{name}</h3>
+    <h3 className="text-xl font-bold mb-3 text-center text-gray-900">{name}</h3>
     
-    <div className="text-center mb-6">
+    <div className="text-center mb-4">
       <div className="flex items-baseline justify-center">
-        <span className="text-6xl font-extrabold text-gray-900">{price}</span>
+        <span className="text-3xl font-extrabold text-gray-900">{price}</span>
         {price !== 'Free' && (
-          <span className="text-xl font-medium text-gray-500 ml-2">/{period}</span>
+          <span className="text-sm font-medium text-gray-500 ml-1">/{period}</span>
         )}
       </div>
-      <p className="text-gray-600 mt-2 text-lg font-medium">{transcriptionTime}</p>
+      <p className="text-gray-600 mt-1 text-sm font-medium">{transcriptionTime}</p>
     </div>
     
-    <ul className="mb-10 w-full space-y-4">
+    <ul className="mb-6 w-full space-y-2">
       {features.map((feature, index) => (
-        <li key={index} className="flex items-start text-base text-gray-700">
-          <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center mr-3 mt-0.5 flex-shrink-0">
-            <Check size={14} className="text-green-600" />
+        <li key={index} className="flex items-start text-sm text-gray-700">
+          <div className="w-4 h-4 bg-green-100 rounded-full flex items-center justify-center mr-2 mt-0.5 flex-shrink-0">
+            <Check size={12} className="text-green-600" />
           </div>
           <span className="leading-relaxed">{feature}</span>
         </li>
@@ -82,26 +82,26 @@ const PricingTier: React.FC<PricingTierProps> = ({
     {price === 'Free' ? (
       <Link 
         to="/signup" 
-        className="group w-full py-4 rounded-2xl text-lg font-semibold transition-all duration-300 bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 focus:ring-4 focus:ring-blue-200 focus:outline-none text-center block shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-2"
+        className="group w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 focus:ring-2 focus:ring-blue-200 focus:outline-none text-center block shadow-md hover:shadow-lg transform hover:scale-105 flex items-center justify-center gap-2"
       >
         <span>Get Started</span>
-        <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
+        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
       </Link>
     ) : (
       <button
         onClick={() => onSubscribe && priceId && planType && onSubscribe(priceId, planType)}
         disabled={isLoading}
-        className="group w-full py-4 rounded-2xl text-lg font-semibold transition-all duration-300 bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 focus:ring-4 focus:ring-purple-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-2"
+        className="group w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 focus:ring-2 focus:ring-purple-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:scale-105 flex items-center justify-center gap-2"
       >
         {isLoading ? (
           <>
-            <Loader2 className="w-5 h-5 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin" />
             Processing...
           </>
         ) : (
           <>
             <span>{cta}</span>
-            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
           </>
         )}
       </button>
@@ -151,20 +151,20 @@ const Pricing: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="min-h-screen gradient-bg">
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-purple-600/10"></div>
-        <div className="relative container mx-auto px-4 py-20 lg:py-24">
-          <div className="text-center max-w-4xl mx-auto">
-            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-100 to-purple-100 px-4 py-2 rounded-full mb-8">
-              <Award className="w-4 h-4 text-yellow-500" />
-              <span className="text-sm font-medium text-gray-700">Flexible Pricing</span>
+        <div className="relative compact-container py-12 lg:py-16">
+          <div className="text-center max-w-3xl mx-auto">
+            <div className="inline-flex items-center gap-1.5 bg-gradient-to-r from-blue-100 to-purple-100 px-3 py-1.5 rounded-full mb-6">
+              <Award className="w-3 h-3 text-yellow-500" />
+              <span className="text-xs font-medium text-gray-700">Flexible Pricing</span>
             </div>
-            <h1 className="text-5xl lg:text-6xl font-bold mb-6 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <h1 className="text-3xl lg:text-4xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               Choose Your Plan
             </h1>
-            <p className="text-xl lg:text-2xl text-gray-600 mb-12 leading-relaxed max-w-3xl mx-auto">
+            <p className="text-lg lg:text-xl text-gray-600 mb-8 leading-relaxed max-w-2xl mx-auto">
               Start for free and upgrade anytime. Enjoy high-accuracy WhatsApp audio transcription with flexible plans for every need.
             </p>
           </div>
@@ -172,9 +172,9 @@ const Pricing: React.FC = () => {
       </section>
 
       {/* Pricing Cards */}
-      <section className="relative bg-gradient-to-br from-white to-gray-50 py-20">
-        <div className="container mx-auto px-4">
-          <div className="grid lg:grid-cols-2 gap-12 max-w-6xl mx-auto mb-20">
+      <section className="relative bg-gradient-to-br from-white to-gray-50 py-12">
+        <div className="compact-container">
+          <div className="grid lg:grid-cols-2 gap-8 max-w-5xl mx-auto mb-12">
         <PricingTier
           name="Free Plan"
           price="Free"
@@ -212,38 +212,38 @@ const Pricing: React.FC = () => {
         </div>
 
         {/* Features Section */}
-        <section className="relative bg-gradient-to-br from-gray-50 to-white py-20">
-          <div className="container mx-auto px-4 mb-20">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">All Plans Include</h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+        <section className="relative bg-gradient-to-br from-gray-50 to-white py-12">
+          <div className="compact-container mb-12">
+          <div className="text-center mb-12">
+            <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-4">All Plans Include</h2>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Every plan comes with our core features to ensure the best transcription experience
             </p>
           </div>
           
-          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-            <div className="text-center p-8 bg-white rounded-3xl shadow-2xl border border-gray-100">
-              <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <CheckCircle className="w-8 h-8 text-white" />
+          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            <div className="text-center p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-5 h-5 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">High Accuracy</h3>
-              <p className="text-gray-600">Advanced AI technology ensures 95%+ transcription accuracy</p>
+              <h3 className="text-lg font-bold text-gray-900 mb-3">High Accuracy</h3>
+              <p className="text-gray-600 text-sm">Advanced AI technology ensures 95%+ transcription accuracy</p>
             </div>
             
-            <div className="text-center p-8 bg-white rounded-3xl shadow-2xl border border-gray-100">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <Shield className="w-8 h-8 text-white" />
+            <div className="text-center p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mx-auto mb-4">
+                <Shield className="w-5 h-5 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Email Support</h3>
-              <p className="text-gray-600">Get help whenever you need it with our responsive support team</p>
+              <h3 className="text-lg font-bold text-gray-900 mb-3">Email Support</h3>
+              <p className="text-gray-600 text-sm">Get help whenever you need it with our responsive support team</p>
             </div>
             
-            <div className="text-center p-8 bg-white rounded-3xl shadow-2xl border border-gray-100">
-              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <Clock className="w-8 h-8 text-white" />
+            <div className="text-center p-6 bg-white rounded-xl shadow-lg border border-gray-100">
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center mx-auto mb-4">
+                <Clock className="w-5 h-5 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">No Commitment</h3>
-              <p className="text-gray-600">Cancel anytime with no long-term contracts or hidden fees</p>
+              <h3 className="text-lg font-bold text-gray-900 mb-3">No Commitment</h3>
+              <p className="text-gray-600 text-sm">Cancel anytime with no long-term contracts or hidden fees</p>
             </div>
           </div>
         </div>
