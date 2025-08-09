@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { MessageSquare, Menu, X, User, Home, CreditCard, FileText, Settings, LogOut, UserPlus, LogIn, Sparkles, ChevronDown } from 'lucide-react'
+import { MessageSquare, Menu, X, User, Home, CreditCard, FileText, Settings, LogOut, UserPlus, LogIn, ChevronDown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const Header: React.FC = () => {
@@ -83,7 +83,7 @@ const Header: React.FC = () => {
           </Link>
           
           <nav className="hidden lg:block">
-            <ul className="flex space-x-3 items-center">
+            <ul className="flex space-x-4 items-center list-none m-0 p-0">
               <li>
                 <Link 
                   to="/" 
@@ -182,7 +182,7 @@ const Header: React.FC = () => {
                   <li>
                     <Link 
                       to="/signin" 
-                      className={`px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                      className={`inline-flex h-9 items-center px-3 rounded-lg text-sm font-medium transition-colors duration-200 gap-1.5 ${
                         isScrolled ? 'text-gray-700 hover:bg-gray-100' : 'text-white/90 hover:bg-white/10'
                       }`}
                     >
@@ -193,7 +193,7 @@ const Header: React.FC = () => {
                   <li>
                     <Link 
                       to="/signup" 
-                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105 shadow-sm"
+                      className="inline-flex h-9 items-center px-4 rounded-lg text-sm font-medium bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 transition-colors duration-200 shadow-sm"
                     >
                       <UserPlus size={14} />
                       Sign Up
@@ -217,7 +217,7 @@ const Header: React.FC = () => {
       {isMenuOpen && (
         <nav className="lg:hidden bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-xl">
           <div className="container mx-auto px-4 py-6">
-            <ul className="space-y-2">
+            <ul className="space-y-2 list-none m-0 p-0">
               <li>
                 <Link 
                   to="/" 
