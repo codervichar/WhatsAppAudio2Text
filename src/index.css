@@ -33,7 +33,18 @@
 }
 
 .form-input {
-  @apply w-full p-2.5 pl-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm;
+  @apply w-full h-11 p-2.5 pl-3 rounded-lg border border-gray-200 bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm;
+}
+
+/* Utility helpers for inputs with icons */
+.input-with-left-icon {
+  @apply pl-10;
+}
+.input-with-right-icon {
+  @apply pr-10;
+}
+.input-icon {
+  @apply absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none;
 }
 
 .form-label {

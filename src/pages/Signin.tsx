@@ -55,13 +55,13 @@ const Signin: React.FC = () => {
             <div className="form-group-compact">
               <label htmlFor="email" className="form-label">Email</label>
               <div className="relative">
-                <User size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <User size={16} className="input-icon icon-compact" />
                 <input
                   type="email"
                   id="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="form-input pl-10"
+                  className="form-input input-with-left-icon"
                   placeholder="Enter your email address"
                   required
                   disabled={isLoading}
@@ -72,13 +72,13 @@ const Signin: React.FC = () => {
             <div className="form-group-compact">
               <label htmlFor="password" className="form-label">Password</label>
               <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <Lock size={16} className="input-icon icon-compact" />
                 <input
                   type="password"
                   id="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="form-input pl-10"
+                  className="form-input input-with-left-icon"
                   placeholder="Enter your password"
                   required
                   disabled={isLoading}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { User, Mail, Phone, Lock, Globe, AlertCircle, Eye, EyeOff, CheckCircle, ChevronDown, Search } from 'lucide-react'
+import { User, Mail, Phone, Lock, AlertCircle, Eye, EyeOff, CheckCircle, ChevronDown, Search } from 'lucide-react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
@@ -186,13 +186,13 @@ const Signup: React.FC = () => {
             <div className="form-group-compact">
               <label htmlFor="firstName" className="form-label">First Name</label>
               <div className="relative">
-                <User size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <User size={16} className="input-icon icon-compact" />
                 <input
                   type="text"
                   id="firstName"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
-                  className="form-input pl-10"
+                  className="form-input input-with-left-icon"
                   placeholder="Enter your first name"
                   required
                   disabled={isLoading}
@@ -203,13 +203,13 @@ const Signup: React.FC = () => {
             <div className="form-group-compact">
               <label htmlFor="lastName" className="form-label">Last Name</label>
               <div className="relative">
-                <User size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <User size={16} className="input-icon icon-compact" />
                 <input
                   type="text"
                   id="lastName"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
-                  className="form-input pl-10"
+                  className="form-input input-with-left-icon"
                   placeholder="Enter your last name"
                   required
                   disabled={isLoading}
@@ -220,13 +220,13 @@ const Signup: React.FC = () => {
             <div className="form-group-compact">
               <label htmlFor="email" className="form-label">Email</label>
               <div className="relative">
-                <Mail size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <Mail size={16} className="input-icon icon-compact" />
                 <input
                   type="email"
                   id="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="form-input pl-10"
+                  className="form-input input-with-left-icon"
                   placeholder="Enter your email address"
                   required
                   disabled={isLoading}
@@ -309,13 +309,13 @@ const Signup: React.FC = () => {
                 <div className="flex-1">
                   <label htmlFor="phoneNumber" className="block text-xs text-gray-600 mb-1">Mobile Number</label>
                   <div className="relative">
-                    <Phone size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                    <Phone size={16} className="input-icon icon-compact" />
                     <input
                       type="tel"
                       id="phoneNumber"
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
-                      className="form-input pl-10"
+                      className="form-input input-with-left-icon"
                       placeholder="Enter your phone number"
                       maxLength={15}
                       disabled={isLoading}
@@ -328,13 +328,13 @@ const Signup: React.FC = () => {
             <div className="form-group-compact">
               <label htmlFor="password" className="form-label">Password</label>
               <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <Lock size={16} className="input-icon icon-compact" />
                 <input
                   type={showPassword ? "text" : "password"}
                   id="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="form-input pl-10 pr-10"
+                  className="form-input input-with-left-icon input-with-right-icon"
                   placeholder="Enter your password"
                   required
                   disabled={isLoading}
@@ -379,13 +379,13 @@ const Signup: React.FC = () => {
             <div className="form-group-compact">
               <label htmlFor="confirmPassword" className="form-label">Confirm Password</label>
               <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 icon-compact" />
+                <Lock size={16} className="input-icon icon-compact" />
                 <input
                   type={showConfirmPassword ? "text" : "password"}
                   id="confirmPassword"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="form-input pl-10 pr-10"
+                  className="form-input input-with-left-icon input-with-right-icon"
                   placeholder="Confirm your password"
                   required
                   disabled={isLoading}
