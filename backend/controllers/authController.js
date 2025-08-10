@@ -34,11 +34,27 @@ const register = async (req, res) => {
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
+    // Get default language ID (English = 1, or find by code 'en')
+    let languageId = 1; // Default to English
+    if (language) {
+      try {
+        const [langResult] = await pool.execute(
+          'SELECT id FROM language_codes WHERE code = ?',
+          [language]
+        );
+        if (langResult.length > 0) {
+          languageId = langResult[0].id;
+        }
+      } catch (error) {
+        console.warn('Could not find language code, using default:', error.message);
+      }
+    }
+
     // Insert new user
     const [result] = await pool.execute(
       `INSERT INTO users (first_name, last_name, email, phone_number, password, wa_language) 
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [first_name, last_name, email, phone_number || null, hashedPassword, language || 'en']
+      [first_name, last_name, email, phone_number || null, hashedPassword, languageId]
     );
 
     const userId = result.insertId;
