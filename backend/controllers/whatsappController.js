@@ -8,6 +8,56 @@ require('dotenv').config();
 
 // TODO: Add Twilio send message helper
 
+// Deepgram transcription callback function
+async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, speakerIdentification, isSubscribed) {
+  try {
+    const apiKey = process.env.DEEPGRAM_API_KEY;
+    const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL + 'api/hook';
+    const apiUrl = process.env.DEEPGRAM_API_URL + 'listen';
+    
+    let queryString = '';
+
+    if (speakerIdentification == "Yes") {
+      queryString = '?model=whisper-large&smart_format=true&punctuate=true&paragraphs=true&utterances=true&diarize=true';
+    } else {
+      queryString = '?model=whisper-large&smart_format=true';
+    }
+
+    if (language == "") {
+      queryString = queryString + '&detect_language=true';
+    } else {
+      queryString = queryString + '&language=' + language;
+    }
+
+    const fullApiUrl = apiUrl + queryString + '&callback=' + callBackUrl;
+
+    // Request headers
+    const headers = {
+      'Authorization': `Token ${apiKey}`,
+      'Content-Type': 'application/json'
+    };
+
+    // Request body
+    const requestBody = {
+      url: s3FileUrl
+    };
+
+    // Make request to Deepgram
+    const response = await axios.post(fullApiUrl, requestBody, { headers });
+    
+    if (response.data) {
+      console.log('Deepgram transcription request successful:', response.data);
+      return response.data.request_id;
+    } else {
+      console.error('Deepgram API returned no response');
+      return { status: false, transcript: [] };
+    }
+  } catch (error) {
+    console.error('Deepgram transcription callback error:', error);
+    return { status: false, transcript: [] };
+  }
+}
+
 // Helper to send WhatsApp reply via Twilio
 async function sendWhatsAppReply(to, messageBody) {
   const accountSid = process.env.TWILIO_SID;
@@ -150,12 +200,28 @@ const handleWhatsAppMessage = async (req, res) => {
     };
 
     // Store transcript info in DB using existing transcriptions table
-    await pool.execute(
+    const [insertResult] = await pool.execute(
       'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
       [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode]
     );
 
-    await sendWhatsAppReply(req.body.From, `We have received your file. Your file is being processed.\n\nYou can track your result here ${process.env.APP_URL}`);
+    // Get the inserted transcription ID
+    const transcriptionId = insertResult.insertId;
+
+    // Call Deepgram transcription callback
+    try {
+      const requestId = await deepgramTranscriptCallback(unique, languageCode, bucketUrl, 'No', user.is_subscribed || false);
+      console.log(`Deepgram transcription initiated for transcription ID: ${transcriptionId}, request ID: ${requestId}`);
+    } catch (deepgramError) {
+      console.error('Deepgram transcription callback failed:', deepgramError);
+      // Update status to failed if Deepgram call fails
+      await pool.execute(
+        'UPDATE transcriptions SET status = ? WHERE id = ?',
+        ['failed', transcriptionId]
+      );
+    }
+
+    await sendWhatsAppReply(req.body.From, `We have received your file. Your file is being processed.\n\nYou can track your result here ${process.env.FRONTEND_URL}`);
 
     return res.json({ success: true, message: 'File received and in process.' });
   } catch (error) {
@@ -164,4 +230,67 @@ const handleWhatsAppMessage = async (req, res) => {
   }
 };
 
-module.exports = { handleWhatsAppMessage, verifyWebhook }; 
+// Handle Deepgram transcription callback
+const handleDeepgramCallback = async (req, res) => {
+  try {
+    console.log('Deepgram callback received:', req.body);
+    
+    const { 
+      request_id, 
+      results 
+    } = req.body;
+
+    if (!results || !results.channels || !results.channels[0]) {
+      console.error('Invalid Deepgram callback data');
+      return res.status(400).json({ error: 'Invalid callback data' });
+    }
+
+    const transcript = results.channels[0].alternatives[0].transcript;
+    const confidence = results.channels[0].alternatives[0].confidence;
+    const words = results.channels[0].alternatives[0].words || [];
+
+    // Find transcription record by request_id or other identifier
+    // You may need to store the request_id in the database when creating the transcription record
+    const [updateResult] = await pool.execute(
+      `UPDATE transcriptions 
+       SET transcription_text = ?, 
+           confidence_score = ?, 
+           word_count = ?, 
+           status = ?, 
+           updated_at = NOW() 
+       WHERE id = (SELECT id FROM transcriptions WHERE status = 'processing' ORDER BY created_at DESC LIMIT 1)`
+    );
+
+    if (updateResult.affectedRows === 0) {
+      console.error('No transcription record found for request_id:', request_id);
+      return res.status(404).json({ error: 'Transcription record not found' });
+    }
+
+    console.log(`Transcription completed for request_id: ${request_id}`);
+    
+    // Send WhatsApp notification to user about completion
+    try {
+      const [transcriptionRecord] = await pool.execute(
+        'SELECT t.*, u.wtp_number FROM transcriptions t JOIN users u ON t.user_id = u.id WHERE t.status = ? ORDER BY t.updated_at DESC LIMIT 1',
+        ['completed']
+      );
+
+      if (transcriptionRecord[0] && transcriptionRecord[0].wtp_number) {
+        const whatsappNumber = `whatsapp:${transcriptionRecord[0].wtp_number}`;
+        await sendWhatsAppReply(
+          whatsappNumber,
+          `Your transcription is ready! 🎉\n\nYou can view it here: ${process.env.FRONTEND_URL}/dashboard`
+        );
+      }
+    } catch (notificationError) {
+      console.error('Failed to send completion notification:', notificationError);
+    }
+
+    return res.json({ success: true, message: 'Transcription processed successfully' });
+  } catch (error) {
+    console.error('Deepgram callback error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+module.exports = { handleWhatsAppMessage, verifyWebhook, handleDeepgramCallback }; 
