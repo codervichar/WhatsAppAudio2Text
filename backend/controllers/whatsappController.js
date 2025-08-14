@@ -80,7 +80,7 @@ const handleWhatsAppMessage = async (req, res) => {
     const [users] = await pool.execute('SELECT * FROM users WHERE wtp_number = ?', [justPhoneNumber]);
     const user = users[0];
     if (!user) {
-      await sendWhatsAppReply(req.body.From, 'Phone number not registered. Please visit Scribebuddy.com and register your phone number.');
+      await sendWhatsAppReply(req.body.From, 'Phone number not registered new API. Please visit Scribebuddy.com and register your phone number.');
       return res.status(400).json({ error: 'Phone number not registered' });
     }
 
