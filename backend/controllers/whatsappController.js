@@ -13,7 +13,7 @@ async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, sp
   try {
     const apiKey = process.env.DEEPGRAM_API_KEY;
     const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL + 'api/deepgram/hook';
-    const apiUrl = process.env.DEEPGRAM_API_URL + 'listen';
+    const apiUrl = 'https://api.deepgram.com/v1/listen';
     
     let queryString = '';
 
@@ -199,22 +199,27 @@ const handleWhatsAppMessage = async (req, res) => {
       return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     };
 
+    // Call Deepgram transcription callback first to get request_id
+    let requestId = null;
+    try {
+      requestId = await deepgramTranscriptCallback(unique, languageCode, bucketUrl, 'No', user.is_subscribed || false);
+      console.log(`Deepgram transcription initiated, request ID: ${requestId}`);
+    } catch (deepgramError) {
+      console.error('Deepgram transcription callback failed:', deepgramError);
+    }
+
     // Store transcript info in DB using existing transcriptions table
     const [insertResult] = await pool.execute(
-      'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-      [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode]
+      'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, request_id, from_wa, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+      [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode, requestId, senderPhoneNumber]
     );
 
     // Get the inserted transcription ID
     const transcriptionId = insertResult.insertId;
+    console.log(`Transcription record created with ID: ${transcriptionId}, request ID: ${requestId}`);
 
-    // Call Deepgram transcription callback
-    try {
-      const requestId = await deepgramTranscriptCallback(unique, languageCode, bucketUrl, 'No', user.is_subscribed || false);
-      console.log(`Deepgram transcription initiated for transcription ID: ${transcriptionId}, request ID: ${requestId}`);
-    } catch (deepgramError) {
-      console.error('Deepgram transcription callback failed:', deepgramError);
-      // Update status to failed if Deepgram call fails
+    // If Deepgram call failed, update status to failed
+    if (!requestId) {
       await pool.execute(
         'UPDATE transcriptions SET status = ? WHERE id = ?',
         ['failed', transcriptionId]
@@ -233,63 +238,112 @@ const handleWhatsAppMessage = async (req, res) => {
 // Handle Deepgram transcription callback
 const handleDeepgramCallback = async (req, res) => {
   try {
-    console.log('Deepgram callback received:', req.body);
+    // Get raw data from request body
+    const data = req.body;
+    console.log('Deepgram callback received:', data);
     
-    const { 
-      request_id, 
-      results 
-    } = req.body;
-
-    if (!results || !results.channels || !results.channels[0]) {
-      console.error('Invalid Deepgram callback data');
-      return res.status(400).json({ error: 'Invalid callback data' });
-    }
-
-    const transcript = results.channels[0].alternatives[0].transcript;
-    const confidence = results.channels[0].alternatives[0].confidence;
-    const words = results.channels[0].alternatives[0].words || [];
-
-    // Find transcription record by request_id or other identifier
-    // You may need to store the request_id in the database when creating the transcription record
-    const [updateResult] = await pool.execute(
-      `UPDATE transcriptions 
-       SET transcription_text = ?, 
-           confidence_score = ?, 
-           word_count = ?, 
-           status = ?, 
-           updated_at = NOW() 
-       WHERE id = (SELECT id FROM transcriptions WHERE status = 'processing' ORDER BY created_at DESC LIMIT 1)`
+    const requestId = data.metadata?.request_id;
+    const duration = data.metadata?.duration;
+    
+    console.log('Searching for Transcript with request_id:', requestId);
+    
+    // Find transcript by request_id
+    const [transcripts] = await pool.execute(
+      'SELECT * FROM transcriptions WHERE request_id = ?',
+      [requestId]
     );
-
-    if (updateResult.affectedRows === 0) {
-      console.error('No transcription record found for request_id:', request_id);
-      return res.status(404).json({ error: 'Transcription record not found' });
-    }
-
-    console.log(`Transcription completed for request_id: ${request_id}`);
     
-    // Send WhatsApp notification to user about completion
-    try {
-      const [transcriptionRecord] = await pool.execute(
-        'SELECT t.*, u.wtp_number FROM transcriptions t JOIN users u ON t.user_id = u.id WHERE t.status = ? ORDER BY t.updated_at DESC LIMIT 1',
-        ['completed']
-      );
-
-      if (transcriptionRecord[0] && transcriptionRecord[0].wtp_number) {
-        const whatsappNumber = `whatsapp:${transcriptionRecord[0].wtp_number}`;
-        await sendWhatsAppReply(
-          whatsappNumber,
-          `Your transcription is ready! 🎉\n\nYou can view it here: ${process.env.FRONTEND_URL}/dashboard`
-        );
-      }
-    } catch (notificationError) {
-      console.error('Failed to send completion notification:', notificationError);
+    if (transcripts.length === 0) {
+      console.error('No transcript found for request_id:', requestId);
+      return res.status(404).json({ error: 'Transcript not found' });
     }
-
-    return res.json({ success: true, message: 'Transcription processed successfully' });
+    
+    const transcript = transcripts[0];
+    const transactionId = transcript.transaction_id || transcript.id; // Use id as fallback
+    
+    // Update transcript fields
+    await pool.execute(
+      `UPDATE transcriptions 
+       SET status = ?, 
+           meta_data = ?, 
+           duration = ?, 
+           updated_at = NOW() 
+       WHERE request_id = ?`,
+      ['COMPLETED', JSON.stringify(data.metadata), duration, requestId]
+    );
+    
+    // Upload JSON file to S3
+    const fileName = `JSON-${transactionId}.json`;
+    const filePath = `${transactionId}/${fileName}`;
+    
+    console.log('------FileName-----', fileName);
+    console.log('------File Path-----', filePath);
+    
+    const s3 = new AWS.S3({
+      accessKeyId: process.env.AWS_KEY,
+      secretAccessKey: process.env.AWS_SECRET,
+      region: process.env.AWS_REGION,
+    });
+    
+    const uploadResult = await s3.putObject({
+      Bucket: process.env.AWS_BUCKET,
+      Key: filePath,
+      Body: JSON.stringify(data),
+      ContentType: 'application/json'
+    }).promise();
+    
+    if (uploadResult) {
+      console.log('JSON file uploaded to S3 successfully');
+      
+      const originalFileName = transcript.original_filename;
+      console.log('------originalFileName-----', originalFileName);
+      
+      // Check if this is from WhatsApp
+      if (transcript.from_wa) {
+        console.log('from wa', transcript.from_wa);
+        
+        try {
+          // Check if transcript text exists in the results
+          if (data.results && 
+              data.results.channels && 
+              data.results.channels[0] && 
+              data.results.channels[0].alternatives && 
+              data.results.channels[0].alternatives[0] && 
+              data.results.channels[0].alternatives[0].transcript) {
+            
+            const transcriptText = data.results.channels[0].alternatives[0].transcript;
+            const messageText = transcriptText + "\n \n You can see your result here " + process.env.APP_URL;
+            
+            await sendWhatsAppReply(transcript.from_wa, messageText);
+          } else {
+            // If transcript doesn't exist, send error message
+            await sendWhatsAppReply(transcript.from_wa, "Transcription failed for your WA message.");
+          }
+        } catch (error) {
+          console.error('Error sending WhatsApp reply:', error);
+          await sendWhatsAppReply(transcript.from_wa, "Transcription failed for your WA message.");
+        }
+      }
+    } else {
+      console.error('Failed to upload JSON file to S3');
+      // Log error to local file (equivalent to PHP's Storage::disk('local')->put)
+      const fs = require('fs');
+      const path = require('path');
+      
+      try {
+        fs.writeFileSync(path.join(__dirname, '../logs/deepgramTranscriptError.txt'), 'The transcript JSON file not uploaded on S3.');
+        fs.writeFileSync(path.join(__dirname, `../logs/${transactionId}-result.txt`), JSON.stringify(data));
+      } catch (writeError) {
+        console.error('Failed to write error logs:', writeError);
+      }
+    }
+    
+    // Send 200 OK response
+    return res.status(200).json({ statusCode: 200, message: 'Success!' });
+    
   } catch (error) {
     console.error('Deepgram callback error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ statusCode: 500, message: 'Internal Server Error' });
   }
 };
 
