@@ -141,13 +141,13 @@ const handleWhatsAppMessage = async (req, res) => {
       if (langs[0]) languageCode = langs[0].code;
     }
 
-    // Store transcript info in DB (example, adjust as needed)
+    // Store transcript info in DB using existing transcriptions table
     await pool.execute(
-      'INSERT INTO transcripts (transaction_id, original_file_name, user_id, s3_file_url, extension, minutes, size, language, status, speaker_identification, attampts, from_wa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [unique, fileName, user.id, bucketUrl, extension, duration, 0.0, languageCode, 'IN-PROCESS', 'No', 1, senderPhoneNumber]
+      'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+      [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, duration.toString(), 'processing', languageCode]
     );
 
-    await sendWhatsAppReply(req.body.From, `We have received your file. Your file is in-process.\n\nYou can track your result here ${process.env.APP_URL}`);
+    await sendWhatsAppReply(req.body.From, `We have received your file. Your file is being processed.\n\nYou can track your result here ${process.env.APP_URL}`);
 
     return res.json({ success: true, message: 'File received and in process.' });
   } catch (error) {
