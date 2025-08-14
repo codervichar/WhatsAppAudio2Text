@@ -205,23 +205,57 @@ const handleWhatsAppMessage = async (req, res) => {
       requestId = await deepgramTranscriptCallback(unique, languageCode, bucketUrl, 'No', user.is_subscribed || false);
       console.log(`Deepgram transcription initiated, request ID: ${requestId}`);
       console.log(`Request ID type: ${typeof requestId}, value: ${JSON.stringify(requestId)}`);
+      
+      // Validate requestId
+      if (!requestId || typeof requestId !== 'string' || requestId.trim() === '') {
+        console.error('❌ Invalid requestId received:', requestId);
+        requestId = null;
+      } else {
+        console.log('✅ Valid requestId received:', requestId);
+      }
     } catch (deepgramError) {
       console.error('Deepgram transcription callback failed:', deepgramError);
+      requestId = null;
     }
 
     // Store transcript info in DB using existing transcriptions table
-    // Use a try-catch to handle missing columns gracefully
     let insertResult;
+    
+    // Log all the data being inserted
+    console.log('=== INSERT DATA DEBUG ===');
+    console.log('user.id:', user.id, 'type:', typeof user.id);
+    console.log('fileName:', fileName, 'type:', typeof fileName);
+    console.log('bucketUrl:', bucketUrl, 'type:', typeof bucketUrl);
+    console.log('audioBuffer.length:', audioBuffer.length, 'type:', typeof audioBuffer.length);
+    console.log('mimeType:', mimeType, 'type:', typeof mimeType);
+    console.log('formatDuration(duration):', formatDuration(duration), 'type:', typeof formatDuration(duration));
+    console.log('languageCode:', languageCode, 'type:', typeof languageCode);
+    console.log('requestId:', requestId, 'type:', typeof requestId);
+    console.log('senderPhoneNumber:', senderPhoneNumber, 'type:', typeof senderPhoneNumber);
+    console.log('========================');
+    
     try {
-      // Try with new columns first (including request_id)
-      console.log('Attempting to insert with request_id:', requestId);
-      [insertResult] = await pool.execute(
-        'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, request_id, from_wa, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode, requestId, senderPhoneNumber]
-      );
-      console.log(`Transcription record created with ID: ${insertResult.insertId}, request ID: ${requestId}`);
+      // Only try with request_id if we have a valid requestId
+      if (requestId && typeof requestId === 'string' && requestId.trim() !== '') {
+        console.log('Attempting to insert with request_id:', requestId);
+        
+        const insertQuery = 'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, request_id, from_wa, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())';
+        const insertParams = [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode, requestId, senderPhoneNumber];
+        
+        console.log('INSERT Query:', insertQuery);
+        console.log('INSERT Params:', insertParams);
+        
+        [insertResult] = await pool.execute(insertQuery, insertParams);
+        console.log(`✅ Transcription record created with ID: ${insertResult.insertId}, request ID: ${requestId}`);
+      } else {
+        console.log('⚠️ No valid requestId, using fallback INSERT without request_id');
+        throw new Error('No valid requestId');
+      }
     } catch (columnError) {
-      console.log('Column error details:', columnError.message);
+      console.log('❌ Column error details:', columnError.message);
+      console.log('❌ Error code:', columnError.code);
+      console.log('❌ SQL Message:', columnError.sqlMessage);
+      
       if (columnError.code === 'ER_BAD_FIELD_ERROR') {
         console.log('New columns not available, using existing schema...');
         // Fallback to existing schema without new columns
@@ -229,7 +263,7 @@ const handleWhatsAppMessage = async (req, res) => {
           'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
           [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode]
         );
-        console.log(`Transcription record created with ID: ${insertResult.insertId} (without request_id)`);
+        console.log(`⚠️ Transcription record created with ID: ${insertResult.insertId} (without request_id)`);
       } else {
         throw columnError;
       }
