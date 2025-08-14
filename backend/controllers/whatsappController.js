@@ -292,6 +292,7 @@ const handleWhatsAppMessage = async (req, res) => {
 // Handle Deepgram transcription callback
 const handleDeepgramCallback = async (req, res) => {
   try {
+    console.log('Deepgram callback received:', req.body);
     // Get raw data from request body
     const data = req.body;
     console.log('Deepgram callback received:', data);
