@@ -209,14 +209,31 @@ const handleWhatsAppMessage = async (req, res) => {
     }
 
     // Store transcript info in DB using existing transcriptions table
-    const [insertResult] = await pool.execute(
-      'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, request_id, from_wa, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-      [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode, requestId, senderPhoneNumber]
-    );
+    // Use a try-catch to handle missing columns gracefully
+    let insertResult;
+    try {
+      // Try with new columns first (including request_id)
+      [insertResult] = await pool.execute(
+        'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, request_id, from_wa, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+        [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode, requestId, senderPhoneNumber]
+      );
+      console.log(`Transcription record created with ID: ${insertResult.insertId}, request ID: ${requestId}`);
+    } catch (columnError) {
+      if (columnError.code === 'ER_BAD_FIELD_ERROR') {
+        console.log('New columns not available, using existing schema...');
+        // Fallback to existing schema without new columns
+        [insertResult] = await pool.execute(
+          'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+          [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode]
+        );
+        console.log(`Transcription record created with ID: ${insertResult.insertId} (without request_id)`);
+      } else {
+        throw columnError;
+      }
+    }
 
     // Get the inserted transcription ID
     const transcriptionId = insertResult.insertId;
-    console.log(`Transcription record created with ID: ${transcriptionId}, request ID: ${requestId}`);
 
     // If Deepgram call failed, update status to failed
     if (!requestId) {
@@ -248,10 +265,24 @@ const handleDeepgramCallback = async (req, res) => {
     console.log('Searching for Transcript with request_id:', requestId);
     
     // Find transcript by request_id
-    const [transcripts] = await pool.execute(
-      'SELECT * FROM transcriptions WHERE request_id = ?',
-      [requestId]
-    );
+    let transcripts;
+    try {
+      [transcripts] = await pool.execute(
+        'SELECT * FROM transcriptions WHERE request_id = ?',
+        [requestId]
+      );
+    } catch (columnError) {
+      if (columnError.code === 'ER_BAD_FIELD_ERROR') {
+        console.log('request_id column not available, using fallback method...');
+        // Fallback: find the most recent processing record
+        [transcripts] = await pool.execute(
+          'SELECT * FROM transcriptions WHERE status = ? ORDER BY created_at DESC LIMIT 1',
+          ['processing']
+        );
+      } else {
+        throw columnError;
+      }
+    }
     
     if (transcripts.length === 0) {
       console.error('No transcript found for request_id:', requestId);
@@ -259,18 +290,37 @@ const handleDeepgramCallback = async (req, res) => {
     }
     
     const transcript = transcripts[0];
-    const transactionId = transcript.transaction_id || transcript.id; // Use id as fallback
+    const transactionId = transcript.id; // Use id as transaction ID
     
-    // Update transcript fields
-    await pool.execute(
-      `UPDATE transcriptions 
-       SET status = ?, 
-           meta_data = ?, 
-           duration = ?, 
-           updated_at = NOW() 
-       WHERE request_id = ?`,
-      ['COMPLETED', JSON.stringify(data.metadata), duration, requestId]
-    );
+    console.log(`Found transcript record ID: ${transcript.id} for request_id: ${requestId}`);
+    
+    // Update transcript fields - handle missing columns gracefully
+    try {
+      await pool.execute(
+        `UPDATE transcriptions 
+         SET status = ?, 
+             meta_data = ?, 
+             duration = ?, 
+             updated_at = NOW() 
+         WHERE request_id = ?`,
+        ['COMPLETED', JSON.stringify(data.metadata), duration, requestId]
+      );
+    } catch (updateError) {
+      if (updateError.code === 'ER_BAD_FIELD_ERROR') {
+        console.log('New columns not available, updating with existing schema...');
+        // Fallback: update without new columns
+        await pool.execute(
+          `UPDATE transcriptions 
+           SET status = ?, 
+               duration = ?, 
+               updated_at = NOW() 
+           WHERE id = ?`,
+          ['COMPLETED', duration, transcript.id]
+        );
+      } else {
+        throw updateError;
+      }
+    }
     
     // Upload JSON file to S3
     const fileName = `JSON-${transactionId}.json`;
@@ -298,32 +348,34 @@ const handleDeepgramCallback = async (req, res) => {
       const originalFileName = transcript.original_filename;
       console.log('------originalFileName-----', originalFileName);
       
-      // Check if this is from WhatsApp
-      if (transcript.from_wa) {
-        console.log('from wa', transcript.from_wa);
-        
-        try {
-          // Check if transcript text exists in the results
-          if (data.results && 
-              data.results.channels && 
-              data.results.channels[0] && 
-              data.results.channels[0].alternatives && 
-              data.results.channels[0].alternatives[0] && 
-              data.results.channels[0].alternatives[0].transcript) {
-            
-            const transcriptText = data.results.channels[0].alternatives[0].transcript;
-            const messageText = transcriptText + "\n \n You can see your result here " + process.env.APP_URL;
-            
-            await sendWhatsAppReply(transcript.from_wa, messageText);
-          } else {
-            // If transcript doesn't exist, send error message
-            await sendWhatsAppReply(transcript.from_wa, "Transcription failed for your WA message.");
-          }
-        } catch (error) {
-          console.error('Error sending WhatsApp reply:', error);
-          await sendWhatsAppReply(transcript.from_wa, "Transcription failed for your WA message.");
-        }
-      }
+             // Check if this is from WhatsApp
+       if (transcript.from_wa) {
+         console.log('from wa', transcript.from_wa);
+         
+         try {
+           // Check if transcript text exists in the results
+           if (data.results && 
+               data.results.channels && 
+               data.results.channels[0] && 
+               data.results.channels[0].alternatives && 
+               data.results.channels[0].alternatives[0] && 
+               data.results.channels[0].alternatives[0].transcript) {
+             
+             const transcriptText = data.results.channels[0].alternatives[0].transcript;
+             const messageText = transcriptText + "\n \n You can see your result here " + process.env.APP_URL;
+             
+             await sendWhatsAppReply(transcript.from_wa, messageText);
+           } else {
+             // If transcript doesn't exist, send error message
+             await sendWhatsAppReply(transcript.from_wa, "Transcription failed for your WA message.");
+           }
+         } catch (error) {
+           console.error('Error sending WhatsApp reply:', error);
+           await sendWhatsAppReply(transcript.from_wa, "Transcription failed for your WA message.");
+         }
+       } else {
+         console.log('No from_wa field found, skipping WhatsApp notification');
+       }
     } else {
       console.error('Failed to upload JSON file to S3');
       // Log error to local file (equivalent to PHP's Storage::disk('local')->put)
