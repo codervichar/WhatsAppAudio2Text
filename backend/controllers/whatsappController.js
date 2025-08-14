@@ -12,7 +12,7 @@ require('dotenv').config();
 async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, speakerIdentification, isSubscribed) {
   try {
     const apiKey = process.env.DEEPGRAM_API_KEY;
-    const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL + 'api/deepgram/hook';
+    const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL + 'api/webhook/deepgram/hook';
     const apiUrl = 'https://api.deepgram.com/v1/listen';
     
     let queryString = '';
