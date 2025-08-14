@@ -10,6 +10,6 @@ router.get('/whatsapp', verifyWebhook);
 router.post('/whatsapp', handleWhatsAppMessage);
 
 // Deepgram callback endpoint for transcription results (matches PHP callback URL)
-router.post('/deepgram/hook', handleDeepgramCallback);
+router.post('/deepgram', handleDeepgramCallback);
 
 module.exports = router; 
