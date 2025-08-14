@@ -26,8 +26,10 @@ interface SignupData {
   last_name: string;
   email: string;
   phone_number?: string;
+  wtp_number?: string;
   password: string;
   language?: string;
+  country_id?: number;
 }
 
 interface LoginData {
@@ -136,7 +138,7 @@ class ApiService {
     return this.request<any>('/users/languages', { method: 'GET' });
   }
 
-  async updateWhatsAppTranscript(data: { country_code: string; wtp_number: string; wa_language: number }): Promise<ApiResponse<any>> {
+  async updateWhatsAppTranscript(data: { country_code: number; wtp_number: string; wa_language: number }): Promise<ApiResponse<any>> {
     const accessToken = localStorage.getItem('accessToken');
     const response = await fetch(`${API_BASE_URL}/users/update-profile`, {
       method: 'POST',

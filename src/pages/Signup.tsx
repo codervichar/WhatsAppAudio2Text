@@ -19,9 +19,9 @@ const Signup: React.FC = () => {
   // Country dropdown state
   const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false)
   const [countrySearchTerm, setCountrySearchTerm] = useState('')
-  const [selectedCountry, setSelectedCountry] = useState<{ code: string; label: string; phonecode?: string } | null>(null)
+  const [selectedCountry, setSelectedCountry] = useState<{ id: number; code: string; label: string; phonecode?: string; iso?: string } | null>(null)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
-  const [countryOptions, setCountryOptions] = useState<{ code: string; label: string; phonecode?: string }[]>([])
+  const [countryOptions, setCountryOptions] = useState<{ id: number; code: string; label: string; phonecode?: string; iso?: string }[]>([])
   const { signup } = useAuth()
   const navigate = useNavigate()
 
@@ -48,6 +48,8 @@ const Signup: React.FC = () => {
   const passwordValidation = validatePassword(password)
   const passwordsMatch = password === confirmPassword && password.length > 0
 
+
+
   // Fetch countries on component mount
   useEffect(() => {
     const fetchCountries = async () => {
@@ -55,9 +57,9 @@ const Signup: React.FC = () => {
         const response = await apiService.getCountries()
         if (response.success && response.data.length > 0) {
           setCountryOptions(response.data)
-          // Set India (+91) as default country
-          const indiaCountry = response.data.find((country: { phonecode?: string }) => country.phonecode === '91')
-          setSelectedCountry(indiaCountry || response.data[0])
+          // Set Indonesia (+62) as default country
+          const indonesiaCountry = response.data.find((country: { phonecode?: number }) => country.phonecode === 62)
+          setSelectedCountry(indonesiaCountry || response.data[0])
         }
       } catch (error) {
         console.error('Failed to fetch countries:', error)
@@ -74,7 +76,7 @@ const Signup: React.FC = () => {
   )
 
   // Handle country select
-  const handleCountrySelect = (country: { code: string; label: string; phonecode?: string }) => {
+  const handleCountrySelect = (country: { id: number; code: string; label: string; phonecode?: string }) => {
     setSelectedCountry(country)
     setCountrySearchTerm('')
     setIsCountryDropdownOpen(false)
@@ -155,7 +157,9 @@ const Signup: React.FC = () => {
         last_name: lastName,
         email,
         phone_number: formattedPhoneNumber,
-        password
+        wtp_number: phoneNumber, // Store WhatsApp number separately
+        password,
+        country_id: selectedCountry?.id
       })
       
       // Redirect to welcome page after successful signup
@@ -234,19 +238,18 @@ const Signup: React.FC = () => {
               </div>
             </div>
             <div className="form-group-compact">
-              <label htmlFor="phoneNumber" className="form-label">Phone Number (Optional)</label>
+              <label htmlFor="phoneNumber" className="form-label">WhatsApp Number (Optional)</label>
               <div className="flex flex-col lg:flex-row gap-3">
                 {/* Country Code Dropdown */}
-                <div className="relative lg:min-w-[120px] country-dropdown-container">
-                  <label className="block text-xs text-gray-600 mb-1">Country Code</label>
+                <div className="relative lg:w-24 country-dropdown-container">
                   <button
                     type="button"
                     onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                    className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 text-sm"
+                    className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 text-sm h-10"
                     disabled={isLoading}
                   >
                     <span className="text-left text-gray-700 font-medium">
-                      {selectedCountry ? `+${selectedCountry.phonecode}` : '+91'}
+                      {selectedCountry ? `+${selectedCountry.phonecode} ${selectedCountry.iso}` : '+62 ID'}
                     </span>
                     <ChevronDown size={16} className="text-gray-400" />
                   </button>
@@ -286,10 +289,10 @@ const Signup: React.FC = () => {
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center space-x-2">
-                                  <span className="font-semibold text-gray-900">+{country.phonecode}</span>
+                                  <span className="font-semibold text-gray-900">+{country.phonecode} {country.iso}</span>
                                   <span className="text-xs text-gray-600 truncate">{country.label}</span>
                                 </div>
-                                {selectedCountry?.code === country.code && (
+                                {selectedCountry?.id === country.id && (
                                   <CheckCircle size={14} className="text-blue-600 flex-shrink-0" />
                                 )}
                               </div>
@@ -305,9 +308,14 @@ const Signup: React.FC = () => {
                     </div>
                   )}
                 </div>
+                {/* Hidden input for country ID */}
+                <input
+                  type="hidden"
+                  name="country_id"
+                  value={selectedCountry?.id || ''}
+                />
                 {/* Mobile Number Input */}
                 <div className="flex-1">
-                  <label htmlFor="phoneNumber" className="block text-xs text-gray-600 mb-1">Mobile Number</label>
                   <div className="relative">
                     <Phone size={16} className="input-icon icon-compact" />
                     <input
@@ -315,7 +323,7 @@ const Signup: React.FC = () => {
                       id="phoneNumber"
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
-                      className="form-input input-with-left-icon"
+                      className="form-input input-with-left-icon h-10"
                       placeholder="Enter your phone number"
                       maxLength={15}
                       disabled={isLoading}

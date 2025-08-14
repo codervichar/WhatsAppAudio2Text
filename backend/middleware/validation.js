@@ -7,12 +7,14 @@ const validateRegistration = (req, res, next) => {
     last_name: Joi.string().min(2).max(50).required(),
     email: Joi.string().email().required(),
     phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).optional(),
+    wtp_number: Joi.string().pattern(/^[0-9]{7,15}$/).optional(),
     password: Joi.string().min(6).max(128).required(),
     language: Joi.string().valid(
       'ar', 'az', 'zh', 'zh-TW', 'da', 'de', 'el', 
       'en', 'es', 'fa', 'fr', 'he', 'id', 'it', 
       'ja', 'nl', 'no', 'pt_BR', 'ru', 'sv', 'th', 'tr', 'uk'
-    ).default('en')
+    ).default('en'),
+    country_id: Joi.number().integer().positive().optional()
   });
 
   const { error } = schema.validate(req.body);
@@ -102,6 +104,7 @@ const validateProfileUpdate = (req, res, next) => {
     last_name: Joi.string().min(2).max(50).optional(),
     email: Joi.string().email().optional(),
     phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).optional(),
+    country_code: Joi.number().integer().positive().optional(),
     password: Joi.string().min(6).max(128).optional(),
     language: Joi.string().valid(
       'ar', 'az', 'zh', 'zh-TW', 'da', 'de', 'el', 

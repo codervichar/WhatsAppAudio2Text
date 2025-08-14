@@ -6,12 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 import waQr from '../assets/wa_qr.png';
 
-const countryCodes = [
-  { code: '+93', label: 'Afghanistan' },
-  { code: '+91', label: 'India' },
-  { code: '+1', label: 'USA' },
-  // Add more as needed
-];
+
 const languages = [
   { code: 'en', label: 'English' },
   { code: 'hi', label: 'Hindi' },
@@ -30,12 +25,12 @@ const Dashboard: React.FC = () => {
   const [waNumber, setWaNumber] = useState('');
   const [waLang, setWaLang] = useState<string | number>('');
   const [waAlert, setWaAlert] = useState(false);
-  const [countryOptions, setCountryOptions] = useState<{ code: string; label: string; phonecode?: string }[]>([]);
+  const [countryOptions, setCountryOptions] = useState<{ id: number; code: string; label: string; phonecode?: string; iso?: string }[]>([]);
   const [languageOptions, setLanguageOptions] = useState<{ id: number; code: string; label: string }[]>([]);
   // Country dropdown state
   const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
   const [countrySearchTerm, setCountrySearchTerm] = useState('');
-  const [selectedCountry, setSelectedCountry] = useState<{ code: string; label: string; phonecode?: string } | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState<{ id: number; code: string; label: string; phonecode?: string; iso?: string } | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   // Notification state
@@ -63,12 +58,17 @@ const Dashboard: React.FC = () => {
         setCountryOptions(data.data);
         setWaCountry(data.data[0].code);
       }
+    }).catch(error => {
+      console.error('Failed to fetch countries:', error);
     });
+    
     // Fetch languages
     apiService.getLanguages().then(data => {
       if (data.success && data.data.length > 0) {
         setLanguageOptions(data.data);
       }
+    }).catch(error => {
+      console.error('Failed to fetch languages:', error);
     });
   }, []);
 
@@ -77,11 +77,21 @@ const Dashboard: React.FC = () => {
     if (profile && countryOptions.length > 0 && languageOptions.length > 0) {
       // Prefill country
       if (profile.country_code) {
-        const foundCountry = countryOptions.find(c => c.code === profile.country_code);
+        console.log('Profile country_code:', profile.country_code, typeof profile.country_code);
+        console.log('Available countries:', countryOptions.map(c => ({ id: c.id, code: c.code, label: c.label })));
+        const foundCountry = countryOptions.find(c => c.id === Number(profile.country_code));
+        console.log('Found country:', foundCountry);
         if (foundCountry) setSelectedCountry(foundCountry);
       }
-      // Prefill WhatsApp number
-      if (profile.wtp_number) setWaNumber(profile.wtp_number);
+      // Prefill WhatsApp number - extract only the number part (remove country code)
+      if (profile.wtp_number) {
+        let phoneNum = profile.wtp_number;
+        if (phoneNum.startsWith('+')) {
+          // Remove the + and country code, keep only the number
+          phoneNum = phoneNum.replace(/^\+[0-9]+/, '');
+        }
+        setWaNumber(phoneNum);
+      }
       // Prefill language
       if (profile.wa_language) setWaLang(profile.wa_language);
     }
@@ -97,7 +107,7 @@ const Dashboard: React.FC = () => {
     }
     try {
       const res = await apiService.updateWhatsAppTranscript({
-        country_code: selectedCountry.code,
+        country_code: selectedCountry.id,
         wtp_number: waNumber,
         wa_language: waLang as number
       });
@@ -118,7 +128,9 @@ const Dashboard: React.FC = () => {
       try {
         setLoading(true);
         const res = await apiService.getProfile();
+        console.log('Profile API response:', res);
         if (res.success) {
+          console.log('Profile data:', res.data.user);
           setProfile(res.data.user);
         } else {
           setError(res.message || 'Failed to load profile');
@@ -164,7 +176,7 @@ const Dashboard: React.FC = () => {
   );
 
   // Handle country select
-  const handleCountrySelect = (country: { code: string; label: string; phonecode?: string }) => {
+  const handleCountrySelect = (country: { id: number; code: string; label: string; phonecode?: string; iso?: string }) => {
     setSelectedCountry(country);
     setWaCountry(country.phonecode || '');
     setCountrySearchTerm('');
@@ -268,16 +280,15 @@ const Dashboard: React.FC = () => {
               <label className="block font-semibold text-gray-700 mb-2 text-sm">WhatsApp Number</label>
               <div className="flex flex-col lg:flex-row gap-3">
                 {/* Searchable Country Dropdown */}
-                <div className="relative lg:min-w-[160px]">
-                  <label className="block text-xs text-gray-600 mb-1">Country Code</label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                    className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 text-sm"
-                  >
-                    <span className="text-left text-gray-700 font-medium">
-                      {selectedCountry ? `+${selectedCountry.phonecode} ${selectedCountry.label}` : 'Select Country'}
-                    </span>
+                                 <div className="relative lg:w-24">
+                   <button
+                     type="button"
+                     onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                     className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 text-sm h-10"
+                   >
+                                         <span className="text-left text-gray-700 font-medium">
+                       {selectedCountry ? `+${selectedCountry.phonecode} ${selectedCountry.iso}` : 'Select Country'}
+                     </span>
                     <ChevronDown size={16} className="text-gray-400" />
                   </button>
                   
@@ -316,10 +327,10 @@ const Dashboard: React.FC = () => {
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <span className="font-semibold text-gray-900">+{country.phonecode}</span>
-                                  <span className="text-xs text-gray-600 truncate">{country.label}</span>
-                                </div>
+                                                                 <div className="flex items-center space-x-2">
+                                   <span className="font-semibold text-gray-900">+{country.phonecode} {country.iso}</span>
+                                   <span className="text-xs text-gray-600 truncate">{country.label}</span>
+                                 </div>
                                 {selectedCountry?.code === country.code && (
                                   <CheckCircle size={12} className="text-blue-600 flex-shrink-0" />
                                 )}
@@ -337,18 +348,24 @@ const Dashboard: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex-1">
-                  <label htmlFor="waNumber" className="block text-xs text-gray-600 mb-1">Mobile Number</label>
-                  <input
-                    id="waNumber"
-                    type="text"
-                    value={waNumber}
-                    onChange={e => setWaNumber(e.target.value.replace(/\D/g, ''))}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm font-medium hover:border-gray-300"
-                    placeholder="Enter mobile number (without country code)"
-                    maxLength={15}
-                  />
-                </div>
+                                                  <div className="flex-1">
+                   <div className="relative">
+                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                       <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                       </svg>
+                     </div>
+                     <input
+                       id="waNumber"
+                       type="text"
+                       value={waNumber}
+                       onChange={e => setWaNumber(e.target.value.replace(/\D/g, ''))}
+                       className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm font-medium hover:border-gray-300 h-10"
+                       placeholder="Enter mobile number (without country code)"
+                       maxLength={15}
+                     />
+                   </div>
+                 </div>
               </div>
             </div>
             

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { User, Mail, Phone, ArrowLeft } from 'lucide-react'
+import { User, Mail, Phone, ArrowLeft, ChevronDown, Search, CheckCircle } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
@@ -16,16 +16,126 @@ const UpdateProfile: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [profileLoading, setProfileLoading] = useState(true)
 
-  // Load user data on component mount
+  // Country dropdown state
+  const [countryOptions, setCountryOptions] = useState<{ id: number; code: string; label: string; phonecode?: string; iso?: string }[]>([])
+  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false)
+  const [countrySearchTerm, setCountrySearchTerm] = useState('')
+  const [selectedCountry, setSelectedCountry] = useState<{ id: number; code: string; label: string; phonecode?: string; iso?: string } | null>(null)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+
+  // Load user data and countries on component mount
   useEffect(() => {
-    if (user) {
-      setFirstName(user.first_name || '')
-      setLastName(user.last_name || '')
-      setEmail(user.email || '')
-      setPhoneNumber(user.phone_number || '')
+    // Fetch profile data from API
+    const fetchProfile = async () => {
+      try {
+        setProfileLoading(true)
+        const res = await apiService.getProfile()
+                 if (res.success && res.data.user) {
+           const profileData = res.data.user
+           setFirstName(profileData.first_name || '')
+           setLastName(profileData.last_name || '')
+           setEmail(profileData.email || '')
+           
+                       // Use wtp_number for WhatsApp number field
+            if (profileData.wtp_number) {
+              let phoneNum = profileData.wtp_number;
+              if (phoneNum.startsWith('+')) {
+                // Remove the + and country code, keep only the number
+                phoneNum = phoneNum.replace(/^\+[0-9]+/, '');
+              }
+              setPhoneNumber(phoneNum);
+            } else {
+              // Fallback to phone_number if wtp_number is not available
+              let phoneNum = profileData.phone_number || '';
+              if (phoneNum.startsWith('+')) {
+                // Remove the + and country code, keep only the number
+                phoneNum = phoneNum.replace(/^\+[0-9]+/, '');
+              }
+              setPhoneNumber(phoneNum);
+            }
+         }
+      } catch (error) {
+        console.error('Failed to fetch profile:', error)
+        setError('Failed to load profile data')
+      } finally {
+        setProfileLoading(false)
+      }
     }
-  }, [user])
+
+    // Fetch countries first, then profile
+    apiService.getCountries().then(data => {
+      if (data.success && data.data.length > 0) {
+        setCountryOptions(data.data)
+        // After countries are loaded, fetch profile
+        fetchProfile()
+      }
+    }).catch(error => {
+      console.error('Failed to fetch countries:', error)
+      setError('Failed to load countries')
+      setProfileLoading(false)
+    })
+  }, [])
+
+  // Prefill country when both profile and countries are loaded
+  useEffect(() => {
+    if (!profileLoading && countryOptions.length > 0) {
+      // Get profile data from API again to ensure we have the latest country_code
+      apiService.getProfile().then(res => {
+        if (res.success && res.data.user && res.data.user.country_code) {
+          const foundCountry = countryOptions.find(c => c.id === Number(res.data.user.country_code))
+          if (foundCountry) setSelectedCountry(foundCountry)
+        }
+      }).catch(error => {
+        console.error('Failed to fetch profile for country prefill:', error)
+      })
+    }
+  }, [profileLoading, countryOptions])
+
+  // Filtered countries for search
+  const filteredCountries = countryOptions.filter((country) =>
+    country.label.toLowerCase().includes(countrySearchTerm.toLowerCase()) ||
+    (country.phonecode && country.phonecode.toString().includes(countrySearchTerm)) ||
+    country.code.toLowerCase().includes(countrySearchTerm.toLowerCase())
+  )
+
+  // Handle country select
+  const handleCountrySelect = (country: { id: number; code: string; label: string; phonecode?: string; iso?: string }) => {
+    setSelectedCountry(country)
+    setCountrySearchTerm('')
+    setIsCountryDropdownOpen(false)
+    setHighlightedIndex(-1)
+  }
+
+  // Keyboard navigation for dropdown
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isCountryDropdownOpen) return
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        setHighlightedIndex((prev) =>
+          prev < filteredCountries.length - 1 ? prev + 1 : 0
+        )
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        setHighlightedIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredCountries.length - 1
+        )
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (highlightedIndex >= 0 && filteredCountries[highlightedIndex]) {
+          handleCountrySelect(filteredCountries[highlightedIndex])
+        }
+        break
+      case 'Escape':
+        setIsCountryDropdownOpen(false)
+        setHighlightedIndex(-1)
+        break
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,6 +149,7 @@ const UpdateProfile: React.FC = () => {
     if (lastName.trim()) updateData.last_name = lastName.trim()
     if (email.trim()) updateData.email = email.trim()
     if (phoneNumber.trim()) updateData.phone_number = phoneNumber.trim()
+    if (selectedCountry?.id) updateData.country_code = selectedCountry.id
 
     if (Object.keys(updateData).length === 0) {
       setError('Please make at least one change to update your profile')
@@ -63,6 +174,27 @@ const UpdateProfile: React.FC = () => {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  // Show loading state
+  if (profileLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="mb-6 text-center">
+            <Link to="/dashboard" className="text-blue-600 hover:text-blue-800 flex items-center justify-center">
+              <ArrowLeft className="mr-2" /> Back to Dashboard
+            </Link>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-center text-gray-900 mb-8">Update Your Profile</h1>
+          <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+            <div className="flex justify-center items-center py-8">
+              <div className="text-gray-600">Loading profile data...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -148,18 +280,93 @@ const UpdateProfile: React.FC = () => {
             </div>
 
             <div>
-              <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700">Phone Number</label>
-              <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Phone size={20} className="text-gray-400" />
+              <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700">WhatsApp Number</label>
+              <div className="flex flex-col lg:flex-row gap-3">
+                {/* Country Code Dropdown */}
+                <div className="relative lg:w-24">
+                  <button
+                    type="button"
+                    onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                    className="w-full flex items-center justify-between border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-400 text-sm h-10"
+                  >
+                    <span className="text-left text-gray-700 font-medium">
+                      {selectedCountry ? `+${selectedCountry.phonecode} ${selectedCountry.iso}` : 'Select Country'}
+                    </span>
+                    <ChevronDown size={16} className="text-gray-400" />
+                  </button>
+                  
+                  {isCountryDropdownOpen && (
+                    <div className="absolute z-[9999] w-64 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-hidden transform -translate-x-1/2 left-1/2">
+                      {/* Search Input */}
+                      <div className="p-2 border-b border-gray-100 bg-gray-50">
+                        <div className="relative">
+                          <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search countries..."
+                            value={countrySearchTerm}
+                            onChange={(e) => {
+                              setCountrySearchTerm(e.target.value)
+                              setHighlightedIndex(-1)
+                            }}
+                            onKeyDown={handleKeyDown}
+                            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs bg-white"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+                      {/* Country List */}
+                      <div className="max-h-36 overflow-y-auto custom-scrollbar">
+                        {filteredCountries.length > 0 ? (
+                          filteredCountries.map((country, index) => (
+                            <button
+                              key={country.code}
+                              type="button"
+                              onClick={() => handleCountrySelect(country)}
+                              className={`w-full text-left px-2 py-1.5 focus:outline-none text-xs transition-colors border-b border-gray-50 last:border-b-0 ${
+                                index === highlightedIndex
+                                  ? 'bg-blue-50 text-blue-900'
+                                  : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-semibold text-gray-900">+{country.phonecode} {country.iso}</span>
+                                  <span className="text-xs text-gray-600 truncate">{country.label}</span>
+                                </div>
+                                {selectedCountry?.code === country.code && (
+                                  <CheckCircle size={12} className="text-blue-600 flex-shrink-0" />
+                                )}
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-2 py-3 text-center text-gray-500 text-xs">
+                            <Search size={16} className="mx-auto mb-1 text-gray-300" />
+                            No countries found
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <input
-                  type="tel"
-                  id="phoneNumber"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                />
+
+                <div className="flex-1">
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Phone size={20} className="text-gray-400" />
+                    </div>
+                    <input
+                      type="tel"
+                      id="phoneNumber"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
+                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 h-10"
+                      placeholder="Enter mobile number (without country code)"
+                      maxLength={15}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 

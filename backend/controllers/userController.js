@@ -84,7 +84,7 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { first_name, last_name, email, phone_number, password } = req.body;
+    const { first_name, last_name, email, phone_number, country_code, password } = req.body;
 
     // Build dynamic update query
     const updateFields = [];
@@ -118,6 +118,10 @@ const updateProfile = async (req, res) => {
     if (phone_number !== undefined) {
       updateFields.push('phone_number = ?');
       updateValues.push(phone_number);
+    }
+    if (country_code !== undefined) {
+      updateFields.push('country_code = ?');
+      updateValues.push(country_code);
     }
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);

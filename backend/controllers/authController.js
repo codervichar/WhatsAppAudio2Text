@@ -15,7 +15,7 @@ const { sendPasswordResetEmail } = require('../services/emailService');
 // @access  Public
 const register = async (req, res) => {
   try {
-    const { first_name, last_name, email, phone_number, password, language } = req.body;
+    const { first_name, last_name, email, phone_number, wtp_number, password, language, country_id } = req.body;
 
     // Check if user already exists
     const [existingUsers] = await pool.execute(
@@ -52,9 +52,9 @@ const register = async (req, res) => {
 
     // Insert new user
     const [result] = await pool.execute(
-      `INSERT INTO users (first_name, last_name, email, phone_number, password, wa_language) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [first_name, last_name, email, phone_number || null, hashedPassword, languageId]
+      `INSERT INTO users (first_name, last_name, email, phone_number, wtp_number, password, wa_language, country_code) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [first_name, last_name, email, phone_number || null, wtp_number || null, hashedPassword, languageId, country_id || null]
     );
 
     const userId = result.insertId;
@@ -83,6 +83,7 @@ const register = async (req, res) => {
           name: `${first_name} ${last_name}`, // For backward compatibility
           email,
           phone_number,
+          wtp_number,
           language: language || 'en',
           is_premium: false
         },
