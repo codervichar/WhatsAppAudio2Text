@@ -40,6 +40,29 @@ async function sendWhatsAppReply(to, messageBody) {
   }
 }
 
+// Webhook verification for WhatsApp Business API
+const verifyWebhook = (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  // Verify token should match your app's verify token
+  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || 'your_verify_token_here';
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === verifyToken) {
+      console.log('Webhook verified successfully');
+      res.status(200).send(challenge);
+    } else {
+      console.log('Webhook verification failed');
+      res.sendStatus(403);
+    }
+  } else {
+    console.log('Webhook verification parameters missing');
+    res.sendStatus(400);
+  }
+};
+
 const handleWhatsAppMessage = async (req, res) => {
   try {
     // Log the request
@@ -133,4 +156,4 @@ const handleWhatsAppMessage = async (req, res) => {
   }
 };
 
-module.exports = { handleWhatsAppMessage }; 
+module.exports = { handleWhatsAppMessage, verifyWebhook }; 
