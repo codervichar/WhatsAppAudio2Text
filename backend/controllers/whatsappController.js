@@ -141,10 +141,18 @@ const handleWhatsAppMessage = async (req, res) => {
       if (langs[0]) languageCode = langs[0].code;
     }
 
+    // Format duration to fit VARCHAR(10) - convert seconds to MM:SS format
+    const formatDuration = (seconds) => {
+      if (!seconds || seconds <= 0) return '0:00';
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = Math.floor(seconds % 60);
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    };
+
     // Store transcript info in DB using existing transcriptions table
     await pool.execute(
       'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-      [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, duration.toString(), 'processing', languageCode]
+      [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode]
     );
 
     await sendWhatsAppReply(req.body.From, `We have received your file. Your file is being processed.\n\nYou can track your result here ${process.env.APP_URL}`);
