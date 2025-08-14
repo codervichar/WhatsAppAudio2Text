@@ -9,7 +9,7 @@ router.get('/whatsapp', verifyWebhook);
 // WhatsApp webhook endpoint for receiving messages
 router.post('/whatsapp', handleWhatsAppMessage);
 
-// Deepgram callback endpoint for transcription results (matches PHP callback URL)
-router.post('/deepgram', handleDeepgramCallback);
+// Deepgram callback endpoint for transcription results
+router.post('/deepgram/hook', handleDeepgramCallback);
 
 module.exports = router; 
