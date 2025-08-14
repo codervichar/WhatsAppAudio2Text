@@ -45,16 +45,16 @@ async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, sp
     // Make request to Deepgram
     const response = await axios.post(fullApiUrl, requestBody, { headers });
     
-    if (response.data) {
+    if (response.data && response.data.request_id) {
       console.log('Deepgram transcription request successful:', response.data);
       return response.data.request_id;
     } else {
-      console.error('Deepgram API returned no response');
-      return { status: false, transcript: [] };
+      console.error('Deepgram API returned no response or no request_id');
+      return null;
     }
   } catch (error) {
     console.error('Deepgram transcription callback error:', error);
-    return { status: false, transcript: [] };
+    return null;
   }
 }
 
@@ -204,6 +204,7 @@ const handleWhatsAppMessage = async (req, res) => {
     try {
       requestId = await deepgramTranscriptCallback(unique, languageCode, bucketUrl, 'No', user.is_subscribed || false);
       console.log(`Deepgram transcription initiated, request ID: ${requestId}`);
+      console.log(`Request ID type: ${typeof requestId}, value: ${JSON.stringify(requestId)}`);
     } catch (deepgramError) {
       console.error('Deepgram transcription callback failed:', deepgramError);
     }
@@ -213,12 +214,14 @@ const handleWhatsAppMessage = async (req, res) => {
     let insertResult;
     try {
       // Try with new columns first (including request_id)
+      console.log('Attempting to insert with request_id:', requestId);
       [insertResult] = await pool.execute(
         'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, request_id, from_wa, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
         [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode, requestId, senderPhoneNumber]
       );
       console.log(`Transcription record created with ID: ${insertResult.insertId}, request ID: ${requestId}`);
     } catch (columnError) {
+      console.log('Column error details:', columnError.message);
       if (columnError.code === 'ER_BAD_FIELD_ERROR') {
         console.log('New columns not available, using existing schema...');
         // Fallback to existing schema without new columns
