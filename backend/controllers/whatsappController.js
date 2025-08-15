@@ -299,12 +299,39 @@ const handleDeepgramCallback = async (req, res) => {
   try {
     // Get raw data from request body
     const data = req.body;
-    console.log('Deepgram callback received:', data);
+    console.log('🎯 Deepgram callback received:', JSON.stringify(data, null, 2));
+    
+    // Validate if this is a proper Deepgram callback
+    if (!data || typeof data !== 'object') {
+      console.log('⚠️ Invalid callback data received');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid callback data' 
+      });
+    }
     
     const requestId = data.metadata?.request_id;
     const duration = data.metadata?.duration;
     
-    console.log('Searching for Transcript with request_id:', requestId);
+    // Check if this is a test request (common for webhook validation)
+    if (!requestId && (!data.metadata || !data.results)) {
+      console.log('🧪 Test webhook request received - responding with success');
+      return res.status(200).json({ 
+        success: true, 
+        message: 'Webhook endpoint is working',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    if (!requestId) {
+      console.error('❌ No request_id found in callback data');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing request_id in callback data' 
+      });
+    }
+    
+    console.log('🔍 Searching for Transcript with request_id:', requestId);
     
     // Find transcript by request_id
     let transcripts;
@@ -315,20 +342,25 @@ const handleDeepgramCallback = async (req, res) => {
       );
     } catch (columnError) {
       if (columnError.code === 'ER_BAD_FIELD_ERROR') {
-        console.log('request_id column not available, using fallback method...');
+        console.log('⚠️ request_id column not available, using fallback method...');
         // Fallback: find the most recent processing record
         [transcripts] = await pool.execute(
           'SELECT * FROM transcriptions WHERE status = ? ORDER BY created_at DESC LIMIT 1',
           ['processing']
         );
       } else {
+        console.error('❌ Database error:', columnError);
         throw columnError;
       }
     }
     
     if (transcripts.length === 0) {
-      console.error('No transcript found for request_id:', requestId);
-      return res.status(404).json({ error: 'Transcript not found' });
+      console.error('❌ No transcript found for request_id:', requestId);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Transcript not found',
+        request_id: requestId
+      });
     }
     
     const transcript = transcripts[0];
@@ -433,11 +465,22 @@ const handleDeepgramCallback = async (req, res) => {
     }
     
     // Send 200 OK response
-    return res.status(200).json({ statusCode: 200, message: 'Success!' });
+    console.log("✅ Callback processed successfully");
+    return res.status(200).json({ 
+      success: true, 
+      message: 'Callback processed successfully',
+      request_id: requestId,
+      timestamp: new Date().toISOString()
+    });
     
   } catch (error) {
-    console.error('Deepgram callback error:', error);
-    return res.status(500).json({ statusCode: 500, message: 'Internal Server Error' });
+    console.error('❌ Deepgram callback error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Internal Server Error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Server error',
+      timestamp: new Date().toISOString()
+    });
   }
 };
 
