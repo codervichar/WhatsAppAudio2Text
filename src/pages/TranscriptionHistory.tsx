@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { ArrowLeft, FileText, Calendar, Clock, Play, Download, Share2, Search, Filter, MoreHorizontal, CheckCircle, AlertCircle, Trash2, Loader2, Settings } from 'lucide-react'
+import { ArrowLeft, FileText, Calendar, Clock, Play, Download, Share2, Search, Filter, MoreHorizontal, CheckCircle, AlertCircle, Trash2, Loader2, Settings, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { apiService } from '../services/api'
 
@@ -93,6 +93,22 @@ const TranscriptionHistory: React.FC = () => {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete transcription')
+    }
+  }
+
+  // Refresh transcription from S3
+  const handleRefreshTranscription = async (id: string) => {
+    try {
+      const response = await apiService.refreshTranscriptionFromS3(id)
+      if (response.success) {
+        // Refresh the list
+        await fetchTranscriptions()
+        setNotification({ message: 'Transcription refreshed successfully!', type: 'success' })
+      } else {
+        setError(response.message || 'Failed to refresh transcription')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh transcription')
     }
   }
 
@@ -362,6 +378,13 @@ const TranscriptionHistory: React.FC = () => {
                         title="Download transcription"
                       >
                         <Download className="w-5 h-5" />
+                      </button>
+                      <button 
+                        className="p-3 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-xl transition-all duration-200"
+                        title="Refresh from S3"
+                        onClick={() => handleRefreshTranscription(transcription.id)}
+                      >
+                        <RefreshCw className="w-5 h-5" />
                       </button>
                       <button 
                         className="p-3 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all duration-200"

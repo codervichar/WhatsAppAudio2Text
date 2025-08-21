@@ -202,6 +202,12 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  async refreshTranscriptionFromS3(id: string): Promise<ApiResponse<any>> {
+    return this.request<any>(`/transcriptions/${id}/refresh`, {
+      method: 'POST',
+    });
+  }
 }
 
 export const apiService = new ApiService();

@@ -4,7 +4,8 @@ const { authenticateToken } = require('../middleware/auth');
 const {
   getTranscriptionHistory,
   getTranscriptionStats,
-  deleteTranscription
+  deleteTranscription,
+  refreshTranscriptionFromS3
 } = require('../controllers/transcriptionController');
 
 // All routes are protected
@@ -19,6 +20,11 @@ router.get('/', getTranscriptionHistory);
 // @desc    Get transcription statistics
 // @access  Private
 router.get('/stats', getTranscriptionStats);
+
+// @route   POST /api/transcriptions/:id/refresh
+// @desc    Refresh transcription from S3
+// @access  Private
+router.post('/:id/refresh', refreshTranscriptionFromS3);
 
 // @route   DELETE /api/transcriptions/:id
 // @desc    Delete transcription
