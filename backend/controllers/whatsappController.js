@@ -15,7 +15,7 @@ async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, sp
     console.log('--------------------------------deepgramTranscriptCallback--------------------------------');
     const apiKey = process.env.DEEPGRAM_API_KEY;
     // Use the full webhook URL from environment variable
-    const callBackUrl = "http://13.60.226.80:5000/api/webhook/deepgram/hook";
+    const callBackUrl = "https://api.voicemessage2text.com/api/webhook/deepgram/hook";
     
     console.log('Deepgram callback URL:', callBackUrl);
     const apiUrl = 'https://api.deepgram.com/v1/listen';
@@ -135,7 +135,7 @@ const handleWhatsAppMessage = async (req, res) => {
     const [users] = await pool.execute('SELECT * FROM users WHERE wtp_number = ?', [justPhoneNumber]);
     const user = users[0];
     if (!user) {
-      await sendWhatsAppReply(req.body.From, 'Phone number not registered new API. Please visit Scribebuddy.com and register your phone number.');
+      await sendWhatsAppReply(req.body.From, 'Phone number not registered new API. Please visit voicemessage2text.com and register your phone number.');
       return res.status(400).json({ error: 'Phone number not registered' });
     }
 
