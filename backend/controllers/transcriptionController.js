@@ -1,4 +1,12 @@
 const { pool } = require('../config/database');
+const AWS = require('aws-sdk');
+
+// Initialize AWS S3
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_KEY,
+  secretAccessKey: process.env.AWS_SECRET,
+  region: process.env.AWS_REGION,
+});
 
 // @desc    Get user's transcription history
 // @route   GET /api/transcriptions
@@ -76,27 +84,55 @@ const getTranscriptionHistory = async (req, res) => {
       [userId]
     );
 
-    // Format the response data
-    const formattedTranscriptions = transcriptions.map(transcription => {
+    // Format the response data with S3 transcription text
+    const formattedTranscriptions = await Promise.all(transcriptions.map(async (transcription) => {
       const createdAt = new Date(transcription.createdAt);
       const updatedAt = new Date(transcription.updatedAt);
+      
+      let transcriptionText = transcription.text;
+      let confidenceScore = transcription.confidence_score || 0;
+      let wordCount = transcription.word_count || 0;
+      
+      // If no transcription text in database, try to get it from S3
+      if (!transcriptionText || transcriptionText === 'No transcription available') {
+        const s3Data = await getTranscriptionFromS3(transcription.request_id);
+        if (s3Data) {
+          transcriptionText = s3Data.text;
+          confidenceScore = s3Data.confidence;
+          wordCount = s3Data.wordCount;
+          
+          // Update the database with the S3 data
+          try {
+            await pool.execute(
+              `UPDATE transcriptions 
+               SET transcription_text = ?, 
+                   confidence_score = ?, 
+                   word_count = ? 
+               WHERE id = ?`,
+              [transcriptionText, confidenceScore, wordCount, transcription.id]
+            );
+          } catch (updateError) {
+            console.error('Error updating transcription with S3 data:', updateError);
+          }
+        }
+      }
       
       return {
         id: transcription.id.toString(),
         date: createdAt.toISOString().split('T')[0],
         time: createdAt.toTimeString().split(' ')[0].substring(0, 5),
-        text: transcription.text || 'No transcription available',
+        text: transcriptionText || 'No transcription available',
         audioLength: transcription.audioLength || '0:00',
         status: transcription.status,
         fileName: transcription.fileName,
         fileSize: formatFileSize(transcription.fileSize || 0),
         language: transcription.language || 'en',
-        confidenceScore: transcription.confidence_score || 0,
-        wordCount: transcription.word_count || 0,
+        confidenceScore: confidenceScore,
+        wordCount: wordCount,
         createdAt: createdAt.toISOString(),
         updatedAt: updatedAt.toISOString()
       };
-    });
+    }));
 
     res.json({
       success: true,
@@ -165,6 +201,69 @@ const getTranscriptionStats = async (req, res) => {
   }
 };
 
+// @desc    Refresh transcription from S3
+// @route   POST /api/transcriptions/:id/refresh
+// @access  Private
+const refreshTranscriptionFromS3 = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const transcriptionId = req.params.id;
+
+    // Check if transcription exists and belongs to user
+    const [transcriptions] = await pool.execute(
+      'SELECT id, request_id, original_filename FROM transcriptions WHERE id = ? AND user_id = ?',
+      [transcriptionId, userId]
+    );
+
+    if (transcriptions.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transcription not found'
+      });
+    }
+
+    const transcription = transcriptions[0];
+
+    // Get transcription data from S3
+    const s3Data = await getTranscriptionFromS3(transcription.request_id);
+    
+    if (s3Data) {
+      // Update the database with S3 data
+      await pool.execute(
+        `UPDATE transcriptions 
+         SET transcription_text = ?, 
+             confidence_score = ?, 
+             word_count = ?,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [s3Data.text, s3Data.confidence, s3Data.wordCount, transcriptionId]
+      );
+
+      res.json({
+        success: true,
+        message: 'Transcription refreshed from S3 successfully',
+        data: {
+          text: s3Data.text,
+          confidence: s3Data.confidence,
+          wordCount: s3Data.wordCount
+        }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: 'No transcription data found in S3'
+      });
+    }
+
+  } catch (error) {
+    console.error('Refresh transcription error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
 // @desc    Delete transcription
 // @route   DELETE /api/transcriptions/:id
 // @access  Private
@@ -217,6 +316,46 @@ const deleteTranscription = async (req, res) => {
   }
 };
 
+// Helper function to read S3 JSON file and extract transcription text
+const getTranscriptionFromS3 = async (requestId) => {
+  try {
+    if (!requestId) return null;
+    
+    const fileName = `JSON-${requestId}.json`;
+    const filePath = `${requestId}/${fileName}`;
+    
+    console.log(`🔍 Reading S3 file: ${filePath}`);
+    
+    const params = {
+      Bucket: process.env.AWS_BUCKET,
+      Key: filePath
+    };
+    
+    const data = await s3.getObject(params).promise();
+    const jsonData = JSON.parse(data.Body.toString());
+    
+    // Extract transcription text from Deepgram response
+    if (jsonData.results && 
+        jsonData.results.channels && 
+        jsonData.results.channels[0] && 
+        jsonData.results.channels[0].alternatives && 
+        jsonData.results.channels[0].alternatives[0]) {
+      
+      const alternative = jsonData.results.channels[0].alternatives[0];
+      return {
+        text: alternative.transcript || '',
+        confidence: alternative.confidence || 0,
+        wordCount: (alternative.transcript || '').split(' ').filter(word => word.length > 0).length
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`❌ Error reading S3 file for request_id ${requestId}:`, error.message);
+    return null;
+  }
+};
+
 // Helper function to format file size
 const formatFileSize = (bytes) => {
   if (bytes === 0) return '0 Bytes';
@@ -231,5 +370,6 @@ const formatFileSize = (bytes) => {
 module.exports = {
   getTranscriptionHistory,
   getTranscriptionStats,
-  deleteTranscription
+  deleteTranscription,
+  refreshTranscriptionFromS3
 }; 

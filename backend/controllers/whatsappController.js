@@ -368,16 +368,36 @@ const handleDeepgramCallback = async (req, res) => {
     
     console.log(`Found transcript record ID: ${transcript.id} for request_id: ${requestId}`);
     
-    // Update transcript fields - handle missing columns gracefully
+    // Extract transcription text from Deepgram response
+    let transcriptText = '';
+    let confidenceScore = 0;
+    let wordCount = 0;
+    
+    if (data.results && 
+        data.results.channels && 
+        data.results.channels[0] && 
+        data.results.channels[0].alternatives && 
+        data.results.channels[0].alternatives[0]) {
+      
+      const alternative = data.results.channels[0].alternatives[0];
+      transcriptText = alternative.transcript || '';
+      confidenceScore = alternative.confidence || 0;
+      wordCount = transcriptText.split(' ').filter(word => word.length > 0).length;
+    }
+    
+    // Update transcript fields with transcription text
     try {
       await pool.execute(
         `UPDATE transcriptions 
          SET status = ?, 
+             transcription_text = ?,
+             confidence_score = ?,
+             word_count = ?,
              meta_data = ?, 
              duration = ?, 
              updated_at = NOW() 
          WHERE request_id = ?`,
-        ['COMPLETED', JSON.stringify(data.metadata), duration, requestId]
+        ['completed', transcriptText, confidenceScore, wordCount, JSON.stringify(data.metadata), duration, requestId]
       );
     } catch (updateError) {
       if (updateError.code === 'ER_BAD_FIELD_ERROR') {
@@ -389,19 +409,29 @@ const handleDeepgramCallback = async (req, res) => {
                duration = ?, 
                updated_at = NOW() 
            WHERE id = ?`,
-          ['COMPLETED', duration, transcript.id]
+          ['completed', duration, transcript.id]
         );
       } else {
         throw updateError;
       }
     }
     
-    // Upload JSON file to S3
-    const fileName = `JSON-${transactionId}.json`;
-    const filePath = `${transactionId}/${fileName}`;
+    // Upload JSON file to S3 - store in same folder as audio file using requestId
+    const fileName = `JSON-${requestId}.json`;
+    const filePath = `${requestId}/${fileName}`;
     
     console.log('------FileName-----', fileName);
     console.log('------File Path-----', filePath);
+    console.log('------Request ID-----', requestId);
+    
+    // Validate AWS credentials
+    if (!process.env.AWS_KEY || !process.env.AWS_SECRET || !process.env.AWS_REGION || !process.env.AWS_BUCKET) {
+      console.error('❌ Missing AWS credentials or bucket configuration');
+      console.error('AWS_KEY:', process.env.AWS_KEY ? 'Set' : 'Missing');
+      console.error('AWS_SECRET:', process.env.AWS_SECRET ? 'Set' : 'Missing');
+      console.error('AWS_REGION:', process.env.AWS_REGION ? 'Set' : 'Missing');
+      console.error('AWS_BUCKET:', process.env.AWS_BUCKET ? 'Set' : 'Missing');
+    }
     
     const s3 = new AWS.S3({
       accessKeyId: process.env.AWS_KEY,
@@ -409,15 +439,25 @@ const handleDeepgramCallback = async (req, res) => {
       region: process.env.AWS_REGION,
     });
     
-    const uploadResult = await s3.putObject({
-      Bucket: process.env.AWS_BUCKET,
-      Key: filePath,
-      Body: JSON.stringify(data),
-      ContentType: 'application/json'
-    }).promise();
+    let uploadResult;
+    try {
+      uploadResult = await s3.putObject({
+        Bucket: process.env.AWS_BUCKET,
+        Key: filePath,
+        Body: JSON.stringify(data),
+        ContentType: 'application/json'
+      }).promise();
+      
+      console.log('✅ JSON file uploaded to S3 successfully');
+      console.log('📁 S3 Location:', `s3://${process.env.AWS_BUCKET}/${filePath}`);
+      console.log('📊 JSON Size:', JSON.stringify(data).length, 'bytes');
+    } catch (s3Error) {
+      console.error('❌ S3 upload error:', s3Error.message);
+      console.error('❌ S3 Error Code:', s3Error.code);
+      uploadResult = null;
+    }
     
     if (uploadResult) {
-      console.log('JSON file uploaded to S3 successfully');
       
       const originalFileName = transcript.original_filename;
       console.log('------originalFileName-----', originalFileName);
@@ -451,14 +491,14 @@ const handleDeepgramCallback = async (req, res) => {
          console.log('No from_wa field found, skipping WhatsApp notification');
        }
     } else {
-      console.error('Failed to upload JSON file to S3');
+      console.error('❌ Failed to upload JSON file to S3');
       // Log error to local file (equivalent to PHP's Storage::disk('local')->put)
       const fs = require('fs');
       const path = require('path');
       
       try {
         fs.writeFileSync(path.join(__dirname, '../logs/deepgramTranscriptError.txt'), 'The transcript JSON file not uploaded on S3.');
-        fs.writeFileSync(path.join(__dirname, `../logs/${transactionId}-result.txt`), JSON.stringify(data));
+        fs.writeFileSync(path.join(__dirname, `../logs/${requestId}-result.txt`), JSON.stringify(data));
       } catch (writeError) {
         console.error('Failed to write error logs:', writeError);
       }
