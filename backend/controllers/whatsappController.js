@@ -8,8 +8,8 @@ require('dotenv').config();
 
 // TODO: Add Twilio send message helper
 
-// Deepgram transcription callback function - Modified to accept audio buffer directly
-async function deepgramTranscriptCallback(audioBuffer, language, speakerIdentification, isSubscribed) {
+// Deepgram transcription callback function - Reverted to URL-based approach
+async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, speakerIdentification, isSubscribed) {
   try {
     console.log('--------------------------------deepgramTranscriptCallback--------------------------------');
     const apiKey = process.env.DEEPGRAM_API_KEY;
@@ -35,26 +35,19 @@ async function deepgramTranscriptCallback(audioBuffer, language, speakerIdentifi
 
     const fullApiUrl = apiUrl + queryString + '&callback=' + callBackUrl;
 
-    // Request headers for multipart form data
+    // Request headers
     const headers = {
       'Authorization': `Token ${apiKey}`,
+      'Content-Type': 'application/json'
     };
 
-    // Create form data with the audio buffer
-    const FormData = require('form-data');
-    const form = new FormData();
-    form.append('buffer', audioBuffer, {
-      filename: 'audio.mp3',
-      contentType: 'audio/mpeg'
-    });
+    // Request body
+    const requestBody = {
+      url: s3FileUrl
+    };
 
-    // Make request to Deepgram with audio buffer
-    const response = await axios.post(fullApiUrl, form, { 
-      headers: {
-        ...headers,
-        ...form.getHeaders()
-      }
-    });
+    // Make request to Deepgram
+    const response = await axios.post(fullApiUrl, requestBody, { headers });
     
     if (response.data && response.data.request_id) {
       console.log('Deepgram transcription request successful:', response.data);
@@ -192,11 +185,39 @@ const handleWhatsAppMessage = async (req, res) => {
       return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     };
 
-    // Call Deepgram transcription callback first to get request_id
+    // Generate a unique identifier for this transcription
+    const unique = uuidv4();
+    
+    // Upload audio file to S3 first (using UUID temporarily)
+    const s3 = new AWS.S3({
+      accessKeyId: process.env.AWS_KEY,
+      secretAccessKey: process.env.AWS_SECRET,
+      region: process.env.AWS_REGION,
+    });
+    
+    const tempFileName = `WA-${unique}.${extension}`;
+    const tempFilePath = `${unique}/${tempFileName}`;
+    const tempBucketUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${tempFilePath}`;
+    
+    console.log('📁 Uploading audio file to S3 (temporary location)...');
+    console.log('📂 File Path:', tempFilePath);
+    console.log('📊 File Size:', audioBuffer.length, 'bytes');
+    
+    await s3.putObject({
+      Bucket: process.env.AWS_BUCKET,
+      Key: tempFilePath,
+      Body: audioBuffer,
+      ContentType: mimeType,
+    }).promise();
+    
+    console.log('✅ Audio file uploaded to S3 successfully (temporary)');
+    console.log('🔗 S3 URL:', tempBucketUrl);
+
+    // Call Deepgram transcription callback to get request_id
     let requestId = null;
     try {
-      console.log('🚀 Calling Deepgram API with audio buffer...');
-      requestId = await deepgramTranscriptCallback(audioBuffer, languageCode, 'No', user.is_subscribed || false);
+      console.log('🚀 Calling Deepgram API with S3 URL...');
+      requestId = await deepgramTranscriptCallback(unique, languageCode, tempBucketUrl, 'No', user.is_subscribed || false);
       console.log(`Deepgram transcription initiated, request ID: ${requestId}`);
       console.log(`Request ID type: ${typeof requestId}, value: ${JSON.stringify(requestId)}`);
       
@@ -206,57 +227,69 @@ const handleWhatsAppMessage = async (req, res) => {
         requestId = null;
       } else {
         console.log('✅ Valid requestId received:', requestId);
+        
+        // Move the audio file to the requestId folder to match the JSON file location
+        console.log('🔄 Moving audio file to match requestId folder...');
+        const finalFileName = `WA-${requestId}.${extension}`;
+        const finalFilePath = `${requestId}/${finalFileName}`;
+        
+        try {
+          console.log('📋 File movement details:');
+          console.log('  Source:', tempFilePath);
+          console.log('  Destination:', finalFilePath);
+          console.log('  Bucket:', process.env.AWS_BUCKET);
+          
+          // Copy the file to the new location
+          await s3.copyObject({
+            Bucket: process.env.AWS_BUCKET,
+            CopySource: `${process.env.AWS_BUCKET}/${tempFilePath}`,
+            Key: finalFilePath
+          }).promise();
+          
+          console.log('✅ Audio file copied to:', finalFilePath);
+          
+          // Verify the copy was successful by checking if the file exists
+          try {
+            await s3.headObject({
+              Bucket: process.env.AWS_BUCKET,
+              Key: finalFilePath
+            }).promise();
+            console.log('✅ Verified: New audio file exists in S3');
+          } catch (verifyError) {
+            console.error('❌ Verification failed: New audio file not found in S3');
+            throw verifyError;
+          }
+          
+          // Delete the original file
+          await s3.deleteObject({
+            Bucket: process.env.AWS_BUCKET,
+            Key: tempFilePath
+          }).promise();
+          
+          console.log('🗑️ Original audio file deleted from:', tempFilePath);
+          
+          // Update variables for database storage
+          fileName = finalFileName;
+          filePath = finalFilePath;
+          bucketUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${finalFilePath}`;
+          
+        } catch (moveError) {
+          console.error('❌ Error moving audio file:', moveError.message);
+          console.error('❌ Error code:', moveError.code);
+          console.error('❌ Continuing with original file path');
+          // Continue with original file path if move fails
+          fileName = tempFileName;
+          filePath = tempFilePath;
+          bucketUrl = tempBucketUrl;
+        }
       }
     } catch (deepgramError) {
       console.error('Deepgram transcription callback failed:', deepgramError);
       requestId = null;
-    }
-
-    // Upload audio file to S3 using the requestId
-    const s3 = new AWS.S3({
-      accessKeyId: process.env.AWS_KEY,
-      secretAccessKey: process.env.AWS_SECRET,
-      region: process.env.AWS_REGION,
-    });
-    
-    let fileName, filePath, bucketUrl;
-    
-    if (requestId && typeof requestId === 'string' && requestId.trim() !== '') {
-      // Use requestId for file naming and path
-      fileName = `WA-${requestId}.${extension}`;
-      filePath = `${requestId}/${fileName}`;
-      bucketUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${filePath}`;
-      
-      console.log('📁 Uploading audio file to S3 using requestId...');
-      console.log('📂 File Path:', filePath);
-      console.log('📊 File Size:', audioBuffer.length, 'bytes');
-      
-      await s3.putObject({
-        Bucket: process.env.AWS_BUCKET,
-        Key: filePath,
-        Body: audioBuffer,
-        ContentType: mimeType,
-      }).promise();
-      
-      console.log('✅ Audio file uploaded to S3 successfully using requestId');
-    } else {
-      // Fallback: use UUID if no requestId
-      const unique = uuidv4();
-      fileName = `WA-${unique}.${extension}`;
-      filePath = `${unique}/${fileName}`;
-      bucketUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${filePath}`;
-      
-      console.log('⚠️ No requestId, using fallback UUID for file upload...');
-      console.log('📂 File Path:', filePath);
-      
-      await s3.putObject({
-        Bucket: process.env.AWS_BUCKET,
-        Key: filePath,
-        Body: audioBuffer,
-        ContentType: mimeType,
-      }).promise();
-      
-      console.log('✅ Audio file uploaded to S3 successfully using fallback UUID');
+      // Use temporary file path if Deepgram fails
+      fileName = tempFileName;
+      filePath = tempFilePath;
+      bucketUrl = tempBucketUrl;
     }
 
     // Store transcript info in DB using existing transcriptions table
