@@ -8,10 +8,9 @@ require('dotenv').config();
 
 // TODO: Add Twilio send message helper
 
-// Deepgram transcription callback function
-async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, speakerIdentification, isSubscribed) {
+// Deepgram transcription callback function - Modified to accept audio buffer directly
+async function deepgramTranscriptCallback(audioBuffer, language, speakerIdentification, isSubscribed) {
   try {
-
     console.log('--------------------------------deepgramTranscriptCallback--------------------------------');
     const apiKey = process.env.DEEPGRAM_API_KEY;
     // Use the full webhook URL from environment variable
@@ -36,19 +35,26 @@ async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, sp
 
     const fullApiUrl = apiUrl + queryString + '&callback=' + callBackUrl;
 
-    // Request headers
+    // Request headers for multipart form data
     const headers = {
       'Authorization': `Token ${apiKey}`,
-      'Content-Type': 'application/json'
     };
 
-    // Request body
-    const requestBody = {
-      url: s3FileUrl
-    };
+    // Create form data with the audio buffer
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('buffer', audioBuffer, {
+      filename: 'audio.mp3',
+      contentType: 'audio/mpeg'
+    });
 
-    // Make request to Deepgram
-    const response = await axios.post(fullApiUrl, requestBody, { headers });
+    // Make request to Deepgram with audio buffer
+    const response = await axios.post(fullApiUrl, form, { 
+      headers: {
+        ...headers,
+        ...form.getHeaders()
+      }
+    });
     
     if (response.data && response.data.request_id) {
       console.log('Deepgram transcription request successful:', response.data);
@@ -171,24 +177,6 @@ const handleWhatsAppMessage = async (req, res) => {
       return res.status(400).json({ error: 'Unable to retrieve audio duration' });
     }
 
-    // Upload to S3
-    const s3 = new AWS.S3({
-      accessKeyId: process.env.AWS_KEY,
-      secretAccessKey: process.env.AWS_SECRET,
-      region: process.env.AWS_REGION,
-    });
-    const unique = uuidv4();
-    const fileName = `WA-${unique}.${extension}`;
-    const filePath = `${unique}/${fileName}`;
-    const bucket = process.env.AWS_BUCKET;
-    await s3.putObject({
-      Bucket: bucket,
-      Key: filePath,
-      Body: audioBuffer,
-      ContentType: mimeType,
-    }).promise();
-    const bucketUrl = `https://${bucket}.s3.${process.env.AWS_REGION}.amazonaws.com/${filePath}`;
-
     // Get language code
     let languageCode = 'en';
     if (user.wa_language) {
@@ -207,7 +195,8 @@ const handleWhatsAppMessage = async (req, res) => {
     // Call Deepgram transcription callback first to get request_id
     let requestId = null;
     try {
-      requestId = await deepgramTranscriptCallback(unique, languageCode, bucketUrl, 'No', user.is_subscribed || false);
+      console.log('🚀 Calling Deepgram API with audio buffer...');
+      requestId = await deepgramTranscriptCallback(audioBuffer, languageCode, 'No', user.is_subscribed || false);
       console.log(`Deepgram transcription initiated, request ID: ${requestId}`);
       console.log(`Request ID type: ${typeof requestId}, value: ${JSON.stringify(requestId)}`);
       
@@ -223,6 +212,53 @@ const handleWhatsAppMessage = async (req, res) => {
       requestId = null;
     }
 
+    // Upload audio file to S3 using the requestId
+    const s3 = new AWS.S3({
+      accessKeyId: process.env.AWS_KEY,
+      secretAccessKey: process.env.AWS_SECRET,
+      region: process.env.AWS_REGION,
+    });
+    
+    let fileName, filePath, bucketUrl;
+    
+    if (requestId && typeof requestId === 'string' && requestId.trim() !== '') {
+      // Use requestId for file naming and path
+      fileName = `WA-${requestId}.${extension}`;
+      filePath = `${requestId}/${fileName}`;
+      bucketUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${filePath}`;
+      
+      console.log('📁 Uploading audio file to S3 using requestId...');
+      console.log('📂 File Path:', filePath);
+      console.log('📊 File Size:', audioBuffer.length, 'bytes');
+      
+      await s3.putObject({
+        Bucket: process.env.AWS_BUCKET,
+        Key: filePath,
+        Body: audioBuffer,
+        ContentType: mimeType,
+      }).promise();
+      
+      console.log('✅ Audio file uploaded to S3 successfully using requestId');
+    } else {
+      // Fallback: use UUID if no requestId
+      const unique = uuidv4();
+      fileName = `WA-${unique}.${extension}`;
+      filePath = `${unique}/${fileName}`;
+      bucketUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${filePath}`;
+      
+      console.log('⚠️ No requestId, using fallback UUID for file upload...');
+      console.log('📂 File Path:', filePath);
+      
+      await s3.putObject({
+        Bucket: process.env.AWS_BUCKET,
+        Key: filePath,
+        Body: audioBuffer,
+        ContentType: mimeType,
+      }).promise();
+      
+      console.log('✅ Audio file uploaded to S3 successfully using fallback UUID');
+    }
+
     // Store transcript info in DB using existing transcriptions table
     let insertResult;
     
@@ -230,6 +266,7 @@ const handleWhatsAppMessage = async (req, res) => {
     console.log('=== INSERT DATA DEBUG ===');
     console.log('user.id:', user.id, 'type:', typeof user.id);
     console.log('fileName:', fileName, 'type:', typeof fileName);
+    console.log('filePath:', filePath, 'type:', typeof filePath);
     console.log('bucketUrl:', bucketUrl, 'type:', typeof bucketUrl);
     console.log('audioBuffer.length:', audioBuffer.length, 'type:', typeof audioBuffer.length);
     console.log('mimeType:', mimeType, 'type:', typeof mimeType);
