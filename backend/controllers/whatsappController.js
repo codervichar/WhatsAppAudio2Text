@@ -62,6 +62,22 @@ async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, sp
   }
 }
 
+// Helper to construct proper WhatsApp phone number format
+function constructWhatsAppNumber(phoneNumber, countryCode) {
+  // If phoneNumber already has a +, return as is
+  if (phoneNumber.startsWith('+')) {
+    return 'whatsapp:' + phoneNumber;
+  }
+  
+  // If we have a country code, construct the full number
+  if (countryCode) {
+    return 'whatsapp:+' + countryCode + phoneNumber;
+  }
+  
+  // Fallback: return as is with whatsapp: prefix
+  return 'whatsapp:' + phoneNumber;
+}
+
 // Helper to send WhatsApp reply via Twilio
 async function sendWhatsAppReply(to, messageBody) {
   const accountSid = process.env.TWILIO_SID;
@@ -129,14 +145,61 @@ const handleWhatsAppMessage = async (req, res) => {
     // Sender phone number
     const senderPhoneNumber = req.body.From; // e.g., 'whatsapp:+14155552671'
     const justPhoneNumber = senderPhoneNumber.replace('whatsapp:', '');
-
-    // Find user by WhatsApp number
-    const [users] = await pool.execute('SELECT * FROM users WHERE wtp_number = ?', [justPhoneNumber]);
+    
+    // Try to find user by the full phone number first (with country code)
+    console.log('🔍 Searching for user with phone number:', justPhoneNumber);
+    let [users] = await pool.execute(`
+      SELECT u.*, c.phonecode 
+      FROM users u 
+      LEFT JOIN country c ON u.country_code = c.id 
+      WHERE u.wtp_number = ?
+    `, [justPhoneNumber]);
+    
+    console.log('📱 First search result:', users.length, 'users found');
+    
+    // If not found, try to find by wtp_number without country code
+    if (users.length === 0) {
+      // Remove potential country code from the incoming number and try to match
+      const cleanNumber = justPhoneNumber.replace(/^\+/, ''); // Remove leading +
+      console.log('🔍 Trying with clean number (no +):', cleanNumber);
+      
+      [users] = await pool.execute(`
+        SELECT u.*, c.phonecode 
+        FROM users u 
+        LEFT JOIN country c ON u.country_code = c.id 
+        WHERE u.wtp_number = ?
+      `, [cleanNumber]);
+      
+      console.log('📱 Second search result:', users.length, 'users found');
+      
+      // If still not found, try to match by constructing full number with country code
+      if (users.length === 0) {
+        console.log('🔍 Trying to match with constructed full number');
+        [users] = await pool.execute(`
+          SELECT u.*, c.phonecode 
+          FROM users u 
+          LEFT JOIN country c ON u.country_code = c.id 
+          WHERE CONCAT('+', c.phonecode, u.wtp_number) = ?
+        `, [justPhoneNumber]);
+        
+        console.log('📱 Third search result:', users.length, 'users found');
+      }
+    }
+    
     const user = users[0];
     if (!user) {
+      console.log('❌ No user found for phone number:', justPhoneNumber);
       await sendWhatsAppReply(req.body.From, 'Phone number not registered new API. Please visit voicemessage2text.com and register your phone number.');
       return res.status(400).json({ error: 'Phone number not registered' });
     }
+    
+    console.log('✅ User found:', {
+      id: user.id,
+      name: user.first_name + ' ' + user.last_name,
+      wtp_number: user.wtp_number,
+      country_code: user.country_code,
+      phonecode: user.phonecode
+    });
 
     const mediaUrl = req.body.MediaUrl0;
     if (!mediaUrl) {
@@ -537,7 +600,7 @@ const handleDeepgramCallback = async (req, res) => {
          console.log('from wa', transcript.from_wa);
          
          try {
-           // Check if transcript text exists in the results
+                        // Check if transcript text exists in the results
            if (data.results && 
                data.results.channels && 
                data.results.channels[0] && 
@@ -548,6 +611,7 @@ const handleDeepgramCallback = async (req, res) => {
              const transcriptText = data.results.channels[0].alternatives[0].transcript;
              const messageText = transcriptText + "\n \n You can see your result here " + process.env.APP_URL;
              
+             // Use the stored from_wa directly as it's already in the correct format
              await sendWhatsAppReply(transcript.from_wa, messageText);
            } else {
              // If transcript doesn't exist, send error message

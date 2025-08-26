@@ -1,12 +1,31 @@
 const { pool } = require('../config/database');
 const AWS = require('aws-sdk');
 
-// Initialize AWS S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_KEY,
-  secretAccessKey: process.env.AWS_SECRET,
-  region: process.env.AWS_REGION,
-});
+// Initialize AWS S3 with error handling
+let s3 = null;
+
+const initializeS3 = () => {
+  if (!s3) {
+    // Check if AWS environment variables are available
+    if (!process.env.AWS_KEY || !process.env.AWS_SECRET || !process.env.AWS_REGION || !process.env.AWS_BUCKET) {
+      console.warn('⚠️ AWS environment variables not configured. S3 functionality will be disabled.');
+      return null;
+    }
+    
+    try {
+      s3 = new AWS.S3({
+        accessKeyId: process.env.AWS_KEY,
+        secretAccessKey: process.env.AWS_SECRET,
+        region: process.env.AWS_REGION,
+      });
+      console.log('✅ AWS S3 initialized successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize AWS S3:', error.message);
+      return null;
+    }
+  }
+  return s3;
+};
 
 // @desc    Get user's transcription history
 // @route   GET /api/transcriptions
@@ -31,6 +50,7 @@ const getTranscriptionHistory = async (req, res) => {
         language,
         confidence_score,
         word_count,
+        request_id,
         created_at as createdAt,
         updated_at as updatedAt
       FROM transcriptions 
@@ -53,7 +73,13 @@ const getTranscriptionHistory = async (req, res) => {
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     queryParams.push(limit, offset);
 
-    const [transcriptions] = await pool.execute(query, queryParams);
+    let transcriptions;
+    try {
+      [transcriptions] = await pool.execute(query, queryParams);
+    } catch (dbError) {
+      console.error('Database query error:', dbError);
+      throw new Error(`Database query failed: ${dbError.message}`);
+    }
 
     // Get total count for pagination
     let countQuery = 'SELECT COUNT(*) as total FROM transcriptions WHERE user_id = ?';
@@ -69,20 +95,33 @@ const getTranscriptionHistory = async (req, res) => {
       countParams.push(`%${search}%`, `%${search}%`);
     }
 
-    const [countResult] = await pool.execute(countQuery, countParams);
-    const total = countResult[0].total;
+    let countResult;
+    let total;
+    try {
+      [countResult] = await pool.execute(countQuery, countParams);
+      total = countResult[0].total;
+    } catch (dbError) {
+      console.error('Database count query error:', dbError);
+      throw new Error(`Database count query failed: ${dbError.message}`);
+    }
 
     // Get statistics
-    const [statsResult] = await pool.execute(
-      `SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-       FROM transcriptions 
-       WHERE user_id = ?`,
-      [userId]
-    );
+    let statsResult;
+    try {
+      [statsResult] = await pool.execute(
+        `SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+          SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing,
+          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+         FROM transcriptions 
+         WHERE user_id = ?`,
+        [userId]
+      );
+    } catch (dbError) {
+      console.error('Database stats query error:', dbError);
+      throw new Error(`Database stats query failed: ${dbError.message}`);
+    }
 
     // Format the response data with S3 transcription text
     const formattedTranscriptions = await Promise.all(transcriptions.map(async (transcription) => {
@@ -95,25 +134,30 @@ const getTranscriptionHistory = async (req, res) => {
       
       // If no transcription text in database, try to get it from S3
       if (!transcriptionText || transcriptionText === 'No transcription available') {
-        const s3Data = await getTranscriptionFromS3(transcription.request_id);
-        if (s3Data) {
-          transcriptionText = s3Data.text;
-          confidenceScore = s3Data.confidence;
-          wordCount = s3Data.wordCount;
-          
-          // Update the database with the S3 data
-          try {
-            await pool.execute(
-              `UPDATE transcriptions 
-               SET transcription_text = ?, 
-                   confidence_score = ?, 
-                   word_count = ? 
-               WHERE id = ?`,
-              [transcriptionText, confidenceScore, wordCount, transcription.id]
-            );
-          } catch (updateError) {
-            console.error('Error updating transcription with S3 data:', updateError);
+        // Check if request_id exists before trying to get from S3
+        if (transcription.request_id) {
+          const s3Data = await getTranscriptionFromS3(transcription.request_id);
+          if (s3Data) {
+            transcriptionText = s3Data.text;
+            confidenceScore = s3Data.confidence;
+            wordCount = s3Data.wordCount;
+            
+            // Update the database with the S3 data
+            try {
+              await pool.execute(
+                `UPDATE transcriptions 
+                 SET transcription_text = ?, 
+                     confidence_score = ?, 
+                     word_count = ? 
+                 WHERE id = ?`,
+                [transcriptionText, confidenceScore, wordCount, transcription.id]
+              );
+            } catch (updateError) {
+              console.error('Error updating transcription with S3 data:', updateError);
+            }
           }
+        } else {
+          console.log(`⚠️ No request_id found for transcription ${transcription.id}, skipping S3 lookup`);
         }
       }
       
@@ -155,9 +199,22 @@ const getTranscriptionHistory = async (req, res) => {
 
   } catch (error) {
     console.error('Get transcription history error:', error);
+    
+    // Log more details for debugging
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      sqlMessage: error.sqlMessage
+    });
+    
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
+      ...(process.env.NODE_ENV === 'development' && { 
+        details: error.message,
+        code: error.code 
+      })
     });
   }
 };
@@ -321,6 +378,13 @@ const getTranscriptionFromS3 = async (requestId) => {
   try {
     if (!requestId) return null;
     
+    // Initialize S3 if not already done
+    const s3Instance = initializeS3();
+    if (!s3Instance) {
+      console.log('⚠️ S3 not available, skipping S3 read');
+      return null;
+    }
+    
     const fileName = `JSON-${requestId}.json`;
     const filePath = `${requestId}/${fileName}`;
     
@@ -331,7 +395,7 @@ const getTranscriptionFromS3 = async (requestId) => {
       Key: filePath
     };
     
-    const data = await s3.getObject(params).promise();
+    const data = await s3Instance.getObject(params).promise();
     const jsonData = JSON.parse(data.Body.toString());
     
     // Extract transcription text from Deepgram response
