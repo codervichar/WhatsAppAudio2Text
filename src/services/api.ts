@@ -153,7 +153,7 @@ class ApiService {
   }
 
   // Stripe endpoints
-  async createCheckoutSession(data: { priceId: string; planType?: string }): Promise<ApiResponse<any>> {
+  async createCheckoutSession(data: { priceId: string; planType?: string; email?: string }): Promise<ApiResponse<any>> {
     return this.request<any>('/stripe/create-checkout-session', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -163,6 +163,33 @@ class ApiService {
   async getSubscriptionStatus(): Promise<ApiResponse<any>> {
     return this.request<any>('/stripe/subscription-status', {
       method: 'GET',
+    });
+  }
+
+  async getSubscriptionDetails(): Promise<ApiResponse<any>> {
+    return this.request<any>('/stripe/subscription-details', {
+      method: 'GET',
+    });
+  }
+
+  async getPaymentHistory(params?: {
+    page?: number;
+    limit?: number;
+  }): Promise<ApiResponse<any>> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+
+    const endpoint = `/stripe/payment-history${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    return this.request<any>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async verifyPaymentSession(sessionId: string): Promise<ApiResponse<any>> {
+    return this.request<any>('/stripe/verify-session', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
     });
   }
 

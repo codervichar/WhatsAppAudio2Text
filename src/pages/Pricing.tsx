@@ -123,12 +123,6 @@ const Pricing: React.FC = () => {
   const handleSubscribe = async (priceId: string, planType: string) => {
     console.log('handleSubscribe called with:', { priceId, planType });
     
-    if (!isAuthenticated) {
-      // Redirect to signup if not authenticated
-      window.location.href = '/signup';
-      return;
-    }
-
     setIsLoading(true);
     try {
       const response = await apiService.createCheckoutSession({

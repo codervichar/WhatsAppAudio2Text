@@ -4,6 +4,7 @@ const AWS = require('aws-sdk');
 const fileType = require('file-type');
 const mm = require('music-metadata');
 const { v4: uuidv4 } = require('uuid');
+const { deductMinutesFromSubscription } = require('../utils/subscriptionUtils');
 require('dotenv').config();
 
 // TODO: Add Twilio send message helper
@@ -207,7 +208,7 @@ const handleWhatsAppMessage = async (req, res) => {
       return res.status(400).json({ error: 'Please send only audio/video files.' });
     }
 
-    // Download media file with Twilio basic auth
+    // Download media file with Twilio basic auth to get duration first
     const mediaResponse = await axios.get(mediaUrl, {
       responseType: 'arraybuffer',
       auth: { username: accountSid, password: authToken },
@@ -232,6 +233,18 @@ const handleWhatsAppMessage = async (req, res) => {
       await sendWhatsAppReply(req.body.From, 'Sorry, we are unable to transcribe this message');
       return res.status(400).json({ error: 'Unable to retrieve audio duration' });
     }
+
+    // Check if user has sufficient minutes before processing
+    const { checkUserMinutes } = require('../utils/subscriptionUtils');
+    const minutesCheck = await checkUserMinutes(user.id, duration);
+    
+    if (!minutesCheck.success) {
+      console.log(`❌ Insufficient minutes for user ${user.id}: ${minutesCheck.message}`);
+      await sendWhatsAppReply(req.body.From, `Insufficient minutes remaining. You have ${minutesCheck.remaining.toFixed(2)} minutes left but need ${minutesCheck.required.toFixed(2)} minutes for this file. Please upgrade your plan.`);
+      return res.status(403).json({ error: 'Insufficient minutes remaining' });
+    }
+    
+    console.log(`✅ Minutes check passed: ${minutesCheck.remaining.toFixed(2)} minutes remaining, ${minutesCheck.required.toFixed(2)} minutes required`);
 
     // Get language code
     let languageCode = 'en';
@@ -547,6 +560,23 @@ const handleDeepgramCallback = async (req, res) => {
       } else {
         throw updateError;
       }
+    }
+    
+    // Deduct minutes from user subscription since transcription was successful
+    if (duration && transcript.user_id) {
+      console.log('💰 Deducting minutes for successful transcription...');
+      const deductionResult = await deductMinutesFromSubscription(transcript.user_id, duration);
+      
+      if (deductionResult.success) {
+        console.log(`✅ Minutes deducted successfully: ${deductionResult.deducted.toFixed(2)} minutes`);
+        console.log(`📊 Remaining minutes: ${deductionResult.remaining.toFixed(2)}`);
+      } else {
+        console.log(`⚠️ Minute deduction failed: ${deductionResult.message}`);
+        // Note: We don't fail the transcription here, just log the issue
+        // The transcription was successful, but minute deduction failed
+      }
+    } else {
+      console.log('⚠️ Cannot deduct minutes: missing duration or user_id');
     }
     
     // Upload JSON file to S3 - store in same folder as audio file using requestId

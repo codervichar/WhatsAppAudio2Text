@@ -11,6 +11,7 @@ A robust Node.js backend API for the WhatsApp Audio to Text application with JWT
 - ✅ **Validation** with Joi
 - 📝 **Logging** with Morgan
 - 🚀 **Production Ready** with error handling and graceful shutdown
+- 📱 **WhatsApp Integration** with country code support for international phone numbers
 
 ## Tech Stack
 
@@ -90,6 +91,35 @@ A robust Node.js backend API for the WhatsApp Audio to Text application with JWT
    ```
 
 The server will automatically create the necessary database tables on first run.
+
+## WhatsApp Integration
+
+### Country Code Support
+
+The WhatsApp integration now supports international phone numbers with proper country code handling:
+
+1. **User Registration**: Users can register with their WhatsApp number and select their country
+2. **Phone Number Matching**: The system can match users by:
+   - Full phone number with country code (e.g., `+1234567890`)
+   - Phone number without country code (e.g., `234567890`)
+   - Constructed full number using stored country code
+
+3. **Database Structure**:
+   - `users.country_code`: References the `country.id` table
+   - `users.wtp_number`: Stores the WhatsApp number (may or may not include country code)
+   - `country.phonecode`: Stores the international dialing code
+
+4. **Testing**: Use the test script to verify functionality:
+   ```bash
+   node scripts/test-whatsapp-country-code.js
+   ```
+
+### WhatsApp Message Flow
+
+1. **Incoming Message**: WhatsApp sends a webhook with the sender's phone number
+2. **User Lookup**: System searches for the user using multiple phone number formats
+3. **Audio Processing**: If audio file is attached, it's processed and transcribed
+4. **Response**: User receives transcription results via WhatsApp
 
 ## API Documentation
 

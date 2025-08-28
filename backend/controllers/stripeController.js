@@ -1,16 +1,48 @@
 const Stripe = require('stripe');
 const { pool } = require('../config/database');
 
-const stripe = new Stripe(process.env.STRIPE_SECRET);
+// Initialize Stripe with proper error handling
+let stripe;
+try {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    console.warn('⚠️ STRIPE_SECRET_KEY not found in environment variables');
+    console.warn('⚠️ Stripe functionality will be disabled');
+  } else {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    console.log('✅ Stripe initialized successfully');
+  }
+} catch (error) {
+  console.error('❌ Failed to initialize Stripe:', error.message);
+  console.warn('⚠️ Stripe functionality will be disabled');
+}
 
 // @desc    Create checkout session
 // @route   POST /api/stripe/create-checkout-session
 // @access  Private
 const createCheckoutSession = async (req, res) => {
-  const { priceId, planType } = req.body;
-  try {
+  const { priceId, planType, email } = req.body;
 
-    const userId = req.user.id;
+  // Check if Stripe is initialized
+  if (!stripe) {
+    return res.status(503).json({
+      success: false,
+      message: 'Stripe service is not configured. Please set STRIPE_SECRET environment variable.'
+    });
+  }
+  
+  try {
+    // Handle both authenticated and unauthenticated users
+    let userId = null;
+    let userEmail = email;
+    
+    if (req.user) {
+      // Authenticated user
+      userId = req.user.id;
+      userEmail = req.user.email;
+    } else {
+      // Unauthenticated user - email is optional
+      userEmail = email || '';
+    }
 
     if (!priceId) {
       return res.status(400).json({
@@ -19,25 +51,28 @@ const createCheckoutSession = async (req, res) => {
       });
     }
 
-    // Get user details
-    const [users] = await pool.execute(
-      'SELECT email, first_name, last_name FROM users WHERE id = ?',
-      [userId]
-    );
+    // Get user details if authenticated
+    let user = { email: userEmail, first_name: '', last_name: '' };
+    
+    if (userId) {
+      const [users] = await pool.execute(
+        'SELECT email, first_name, last_name FROM users WHERE id = ?',
+        [userId]
+      );
 
-    if (users.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+      if (users.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      user = users[0];
     }
 
-    const user = users[0];
-
     // Create checkout session
-    const session = await stripe.checkout.sessions.create({
+    const sessionConfig = {
       payment_method_types: ['card'],
-      customer_email: user.email,
       line_items: [
         {
           price: priceId,
@@ -45,19 +80,26 @@ const createCheckoutSession = async (req, res) => {
         },
       ],
       mode: 'subscription',
-      success_url: `${process.env.FRONTEND_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL}/subscription/cancel`,
+      success_url: `${process.env.APP_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.APP_URL}/subscription/cancel`,
       metadata: {
-        userId: userId.toString(),
+        userId: userId ? userId.toString() : 'guest',
         planType: planType || 'monthly'
       },
       subscription_data: {
         metadata: {
-          userId: userId.toString(),
+          userId: userId ? userId.toString() : 'guest',
           planType: planType || 'monthly'
         }
       }
-    });
+    };
+
+    // Only add customer_email if it's provided
+    if (user.email) {
+      sessionConfig.customer_email = user.email;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     res.json({
       success: true,
@@ -76,10 +118,26 @@ const createCheckoutSession = async (req, res) => {
       planType,
       userId: req.user?.id
     });
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to create checkout session';
+    let errorDetails = error.message;
+    
+    if (error.message.includes('Invalid API key')) {
+      errorMessage = 'Stripe API key is invalid or not configured';
+      errorDetails = 'Please check your STRIPE_SECRET_KEY in the .env file. Get your key from https://dashboard.stripe.com/apikeys';
+    } else if (error.message.includes('No such price')) {
+      errorMessage = 'Invalid price ID provided';
+      errorDetails = 'The price ID does not exist in your Stripe account';
+    } else if (error.message.includes('authentication')) {
+      errorMessage = 'Stripe authentication failed';
+      errorDetails = 'Please verify your Stripe API keys are correct';
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Failed to create checkout session',
-      details: error.message
+      message: errorMessage,
+      details: errorDetails
     });
   }
 };
@@ -88,6 +146,14 @@ const createCheckoutSession = async (req, res) => {
 // @route   POST /api/stripe/webhook
 // @access  Public
 const handleWebhook = async (req, res) => {
+  // Check if Stripe is initialized
+  if (!stripe) {
+    return res.status(503).json({
+      success: false,
+      message: 'Stripe service is not configured. Please set STRIPE_SECRET environment variable.'
+    });
+  }
+  
   const sig = req.headers['stripe-signature'];
   let event;
 
@@ -143,16 +209,60 @@ const handleCheckoutSessionCompleted = async (session) => {
     return;
   }
 
-  // Update user subscription status
-  await pool.execute(
-    `UPDATE users SET 
-     is_subscribed = true,
-     updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
-    [userId]
-  );
+  try {
+    // Get user details
+    const [users] = await pool.execute(
+      'SELECT email, first_name, last_name FROM users WHERE id = ?',
+      [userId]
+    );
 
-  console.log(`User ${userId} completed checkout for ${planType} plan`);
+    if (users.length === 0) {
+      console.error(`User ${userId} not found`);
+      return;
+    }
+
+    const user = users[0];
+
+    // Store payment details
+    await pool.execute(
+      `INSERT INTO payment_history (
+        user_id,
+        stripe_session_id,
+        amount,
+        currency,
+        payment_status,
+        plan_type,
+        payment_method,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [
+        userId,
+        session.id,
+        session.amount_total / 100, // Convert from cents
+        session.currency,
+        session.payment_status,
+        planType,
+        session.payment_method_types?.[0] || 'card'
+      ]
+    );
+
+    // Update user subscription status and add Stripe customer ID
+    await pool.execute(
+      `UPDATE users SET 
+       is_subscribed = true,
+       stripe_cust_id = ?,
+       updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [session.customer, userId]
+    );
+
+    console.log(`✅ User ${userId} completed checkout for ${planType} plan`);
+    console.log(`💰 Payment amount: ${session.currency} ${session.amount_total / 100}`);
+    console.log(`👤 Customer ID: ${session.customer}`);
+
+  } catch (error) {
+    console.error('Error handling checkout session completed:', error);
+  }
 };
 
 // Handle subscription created
@@ -165,32 +275,71 @@ const handleSubscriptionCreated = async (subscription) => {
     return;
   }
 
-  // Get subscription minutes from environment variable
-  const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
+  try {
+    // Get subscription minutes from environment variable
+    const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
+    
+    // Get plan details from Stripe (only if Stripe is initialized)
+    let price = null;
+    let product = null;
+    if (stripe) {
+      try {
+        price = await stripe.prices.retrieve(subscription.items.data[0].price.id);
+        product = await stripe.products.retrieve(price.product);
+      } catch (stripeError) {
+        console.warn('⚠️ Could not retrieve Stripe price/product details:', stripeError.message);
+      }
+    }
 
-  // Insert subscription record
-  await pool.execute(
-    `INSERT INTO subscriptions (
-      user_id, 
-      stripe_subscription_id, 
-      plan, 
-      type, 
-      status, 
-      subscription_minutes,
-      created_at,
-      updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-    [
-      userId,
-      subscription.id,
-      planType,
-      'monthly',
-      subscription.status,
-      subscriptionMinutes
-    ]
-  );
+    // Insert subscription record with detailed information
+    await pool.execute(
+      `INSERT INTO subscriptions (
+        user_id, 
+        subscription_id, 
+        plan, 
+        type, 
+        status, 
+        subscription_minutes,
+        amount,
+        currency,
+        billing_interval,
+        current_period_start,
+        current_period_end,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [
+        userId,
+        subscription.id,
+        planType,
+        subscription.items.data[0].price.recurring?.interval || 'month',
+        subscription.status,
+        subscriptionMinutes,
+        subscription.items.data[0].price.unit_amount / 100, // Convert from cents
+        subscription.currency,
+        subscription.items.data[0].price.recurring?.interval || 'month',
+        new Date(subscription.current_period_start * 1000),
+        new Date(subscription.current_period_end * 1000)
+      ]
+    );
 
-  console.log(`Subscription created for user ${userId}: ${subscription.id}`);
+    // Update user with subscription details
+    await pool.execute(
+      `UPDATE users SET 
+       subscription_plan = ?,
+       subscription_status = ?,
+       updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [planType, subscription.status, userId]
+    );
+
+    console.log(`✅ Subscription created for user ${userId}: ${subscription.id}`);
+    console.log(`📅 Period: ${new Date(subscription.current_period_start * 1000).toISOString()} to ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+    console.log(`💰 Amount: ${subscription.currency} ${subscription.items.data[0].price.unit_amount / 100}`);
+
+  } catch (error) {
+    console.error('Error handling subscription created:', error);
+  }
 };
 
 // Handle subscription updated
@@ -207,7 +356,7 @@ const handleSubscriptionUpdated = async (subscription) => {
     `UPDATE subscriptions SET 
      status = ?,
      updated_at = CURRENT_TIMESTAMP
-     WHERE stripe_subscription_id = ?`,
+     WHERE subscription_id = ?`,
     [subscription.status, subscription.id]
   );
 
@@ -241,7 +390,7 @@ const handleSubscriptionDeleted = async (subscription) => {
     `UPDATE subscriptions SET 
      status = 'canceled',
      updated_at = CURRENT_TIMESTAMP
-     WHERE stripe_subscription_id = ?`,
+     WHERE subscription_id = ?`,
     [subscription.id]
   );
 
@@ -256,39 +405,47 @@ const handleSubscriptionDeleted = async (subscription) => {
 
 // Handle payment succeeded
 const handlePaymentSucceeded = async (invoice) => {
-  if (invoice.subscription) {
-    const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
-    const userId = subscription.metadata?.userId;
+  if (invoice.subscription && stripe) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const userId = subscription.metadata?.userId;
 
-    if (userId) {
-      // Reset used minutes for new billing cycle
-      await pool.execute(
-        'UPDATE subscriptions SET used_minutes = 0 WHERE stripe_subscription_id = ?',
-        [subscription.id]
-      );
+      if (userId) {
+        // Reset used minutes for new billing cycle
+        await pool.execute(
+          'UPDATE subscriptions SET used_minutes = 0 WHERE subscription_id = ?',
+          [subscription.id]
+        );
 
-      console.log(`Payment succeeded for user ${userId}, resetting minutes`);
+        console.log(`Payment succeeded for user ${userId}, resetting minutes`);
+      }
+    } catch (error) {
+      console.error('Error handling payment succeeded:', error.message);
     }
   }
 };
 
 // Handle payment failed
 const handlePaymentFailed = async (invoice) => {
-  if (invoice.subscription) {
-    const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
-    const userId = subscription.metadata?.userId;
+  if (invoice.subscription && stripe) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const userId = subscription.metadata?.userId;
 
-    if (userId) {
-      // Update subscription status
-      await pool.execute(
-        `UPDATE subscriptions SET 
-         status = 'past_due',
-         updated_at = CURRENT_TIMESTAMP
-         WHERE stripe_subscription_id = ?`,
-        [subscription.id]
-      );
+      if (userId) {
+        // Update subscription status
+        await pool.execute(
+          `UPDATE subscriptions SET 
+           status = 'past_due',
+           updated_at = CURRENT_TIMESTAMP
+           WHERE subscription_id = ?`,
+          [subscription.id]
+        );
 
-      console.log(`Payment failed for user ${userId}`);
+        console.log(`Payment failed for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('Error handling payment failed:', error.message);
     }
   }
 };
@@ -300,17 +457,18 @@ const getSubscriptionStatus = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const [subscriptions] = await pool.execute(
-      `SELECT 
-         s.id, s.stripe_subscription_id, s.plan, s.type, s.status,
-         s.subscription_minutes, s.used_minutes,
-         s.created_at, s.updated_at
-       FROM subscriptions s
-       WHERE s.user_id = ? AND s.status IN ('active', 'past_due')
-       ORDER BY s.created_at DESC
-       LIMIT 1`,
-      [userId]
-    );
+         const [subscriptions] = await pool.execute(
+       `SELECT 
+          s.id, s.subscription_id, s.plan, s.type, s.status,
+          s.subscription_minutes, s.used_minutes, s.amount, s.currency,
+          s.billing_interval, s.current_period_start, s.current_period_end,
+          s.created_at, s.updated_at
+        FROM subscriptions s
+        WHERE s.user_id = ? AND s.status IN ('active', 'past_due')
+        ORDER BY s.created_at DESC
+        LIMIT 1`,
+       [userId]
+     );
 
     if (subscriptions.length === 0) {
       return res.json({
@@ -329,15 +487,20 @@ const getSubscriptionStatus = async (req, res) => {
       success: true,
       data: {
         hasActiveSubscription: true,
-        subscription: {
-          id: subscription.id,
-          stripeSubscriptionId: subscription.stripe_subscription_id,
-          plan: subscription.plan,
+                 subscription: {
+           id: subscription.id,
+           stripeSubscriptionId: subscription.subscription_id,
+           plan: subscription.plan,
           type: subscription.type,
           status: subscription.status,
           subscriptionMinutes: subscription.subscription_minutes,
           usedMinutes: subscription.used_minutes,
           minutesLeft: minutesLeft,
+          amount: subscription.amount,
+          currency: subscription.currency,
+          interval: subscription.billing_interval,
+          currentPeriodStart: subscription.current_period_start,
+          currentPeriodEnd: subscription.current_period_end,
           createdAt: subscription.created_at,
           updatedAt: subscription.updated_at
         }
@@ -357,14 +520,22 @@ const getSubscriptionStatus = async (req, res) => {
 // @route   POST /api/stripe/cancel-subscription
 // @access  Private
 const cancelSubscription = async (req, res) => {
+  // Check if Stripe is initialized
+  if (!stripe) {
+    return res.status(503).json({
+      success: false,
+      message: 'Stripe service is not configured. Please set STRIPE_SECRET environment variable.'
+    });
+  }
+  
   try {
     const userId = req.user.id;
 
-    // Get user's active subscription
-    const [subscriptions] = await pool.execute(
-      'SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = "active"',
-      [userId]
-    );
+         // Get user's active subscription
+     const [subscriptions] = await pool.execute(
+       'SELECT subscription_id FROM subscriptions WHERE user_id = ? AND status = "active"',
+       [userId]
+     );
 
     if (subscriptions.length === 0) {
       return res.status(404).json({
@@ -373,21 +544,21 @@ const cancelSubscription = async (req, res) => {
       });
     }
 
-    const subscriptionId = subscriptions[0].stripe_subscription_id;
+         const subscriptionId = subscriptions[0].subscription_id;
 
     // Cancel subscription in Stripe
     await stripe.subscriptions.update(subscriptionId, {
       cancel_at_period_end: true
     });
 
-    // Update local database
-    await pool.execute(
-      `UPDATE subscriptions SET 
-       status = 'canceled',
-       updated_at = CURRENT_TIMESTAMP
-       WHERE stripe_subscription_id = ?`,
-      [subscriptionId]
-    );
+         // Update local database - set status to 'canceling' to indicate scheduled cancellation
+     await pool.execute(
+       `UPDATE subscriptions SET 
+        status = 'canceling',
+        updated_at = CURRENT_TIMESTAMP
+        WHERE subscription_id = ?`,
+       [subscriptionId]
+     );
 
     res.json({
       success: true,
@@ -403,9 +574,334 @@ const cancelSubscription = async (req, res) => {
   }
 };
 
+// @desc    Get detailed subscription information
+// @route   GET /api/stripe/subscription-details
+// @access  Private
+const getSubscriptionDetails = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get current subscription
+    const [subscriptions] = await pool.execute(
+      `SELECT 
+         s.*, u.email, u.first_name, u.last_name
+       FROM subscriptions s
+       JOIN users u ON s.user_id = u.id
+       WHERE s.user_id = ? 
+       ORDER BY s.created_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    // Get payment history
+    const [payments] = await pool.execute(
+      `SELECT 
+         ph.*, s.plan_type as subscription_plan
+       FROM payment_history ph
+       LEFT JOIN subscriptions s ON ph.user_id = s.user_id
+       WHERE ph.user_id = ?
+       ORDER BY ph.created_at DESC
+       LIMIT 10`,
+      [userId]
+    );
+
+    // Get usage statistics
+    const [usageStats] = await pool.execute(
+      `SELECT 
+         COUNT(*) as total_transcriptions,
+         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_transcriptions,
+         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_transcriptions,
+         SUM(file_size) as total_file_size
+       FROM transcriptions
+       WHERE user_id = ?`,
+      [userId]
+    );
+
+    const subscription = subscriptions[0] || null;
+    const minutesLeft = subscription ? Math.max(subscription.subscription_minutes - subscription.used_minutes, 0) : 0;
+
+    res.json({
+      success: true,
+      data: {
+                 subscription: subscription ? {
+           id: subscription.id,
+           stripeSubscriptionId: subscription.subscription_id,
+           plan: subscription.plan,
+          type: subscription.type,
+          status: subscription.status,
+          subscriptionMinutes: subscription.subscription_minutes,
+          usedMinutes: subscription.used_minutes,
+          minutesLeft: minutesLeft,
+          amount: subscription.amount,
+          currency: subscription.currency,
+          interval: subscription.billing_interval,
+          currentPeriodStart: subscription.current_period_start,
+          currentPeriodEnd: subscription.current_period_end,
+          createdAt: subscription.created_at,
+          updatedAt: subscription.updated_at
+        } : null,
+        paymentHistory: payments.map(payment => ({
+          id: payment.id,
+          amount: payment.amount,
+          currency: payment.currency,
+          paymentStatus: payment.payment_status,
+          planType: payment.plan_type,
+          paymentMethod: payment.payment_method,
+          createdAt: payment.created_at
+        })),
+        usageStats: {
+          totalTranscriptions: usageStats[0]?.total_transcriptions || 0,
+          completedTranscriptions: usageStats[0]?.completed_transcriptions || 0,
+          failedTranscriptions: usageStats[0]?.failed_transcriptions || 0,
+          totalFileSize: usageStats[0]?.total_file_size || 0
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get subscription details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get subscription details'
+    });
+  }
+};
+
+// @desc    Get payment history
+// @route   GET /api/stripe/payment-history
+// @access  Private
+const getPaymentHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Get total count
+    const [countResult] = await pool.execute(
+      'SELECT COUNT(*) as total FROM payment_history WHERE user_id = ?',
+      [userId]
+    );
+
+    // Get payment history with pagination
+    const [payments] = await pool.execute(
+      `SELECT 
+         ph.*, s.plan_type as subscription_plan
+       FROM payment_history ph
+       LEFT JOIN subscriptions s ON ph.user_id = s.user_id
+       WHERE ph.user_id = ?
+       ORDER BY ph.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [userId, parseInt(limit), offset]
+    );
+
+    const totalPages = Math.ceil(countResult[0].total / limit);
+
+    res.json({
+      success: true,
+      data: {
+        payments: payments.map(payment => ({
+          id: payment.id,
+          amount: payment.amount,
+          currency: payment.currency,
+          paymentStatus: payment.payment_status,
+          planType: payment.plan_type,
+          paymentMethod: payment.payment_method,
+          stripeSessionId: payment.stripe_session_id,
+          createdAt: payment.created_at
+        })),
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalItems: countResult[0].total,
+          itemsPerPage: parseInt(limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get payment history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get payment history'
+    });
+  }
+};
+
+// @desc    Verify payment session
+// @route   POST /api/stripe/verify-session
+// @access  Private
+const verifyPaymentSession = async (req, res) => {
+  // Check if Stripe is initialized
+  if (!stripe) {
+    return res.status(503).json({
+      success: false,
+      message: 'Stripe service is not configured. Please set STRIPE_SECRET environment variable.'
+    });
+  }
+  
+  try {
+    const { sessionId } = req.body;
+    const userId = req.user.id;
+    
+    console.log('🔍 Verifying session:', { sessionId, userId });
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Session ID is required'
+      });
+    }
+
+    // Retrieve session from Stripe
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    console.log('📊 Session retrieved:', { 
+      id: session.id, 
+      paymentStatus: session.payment_status, 
+      status: session.status,
+      metadata: session.metadata 
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
+
+    // Verify the session belongs to this user or was created as a guest
+    const sessionUserId = session.metadata?.userId;
+    console.log('🔐 User verification:', { sessionUserId, currentUserId: userId.toString() });
+    
+    if (sessionUserId !== userId.toString() && sessionUserId !== 'guest') {
+      console.log('❌ User verification failed');
+      return res.status(403).json({
+        success: false,
+        message: 'Session does not belong to this user'
+      });
+    }
+
+    // If this was a guest session, update the user's subscription status
+    if (sessionUserId === 'guest' && session.payment_status === 'paid') {
+      console.log('🔄 Processing guest session for user:', userId);
+      try {
+        // Update user subscription status
+        await pool.execute(
+          `UPDATE users SET 
+           is_subscribed = true,
+           stripe_cust_id = ?,
+           updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [session.customer, userId]
+        );
+
+        // Store payment details
+        await pool.execute(
+          `INSERT INTO payment_history (
+            user_id,
+            stripe_session_id,
+            amount,
+            currency,
+            payment_status,
+            plan_type,
+            payment_method,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            session.id,
+            session.amount_total / 100,
+            session.currency,
+            session.payment_status,
+            session.metadata?.planType || 'monthly',
+            session.payment_method_types?.[0] || 'card'
+          ]
+        );
+
+        // Create subscription record
+        const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
+        await pool.execute(
+          `INSERT INTO subscriptions (
+            user_id,
+            subscription_id,
+            plan,
+            type,
+            status,
+            subscription_minutes,
+            amount,
+            currency,
+            billing_interval,
+            current_period_start,
+            current_period_end,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            session.subscription || null,
+            session.metadata?.planType || 'monthly',
+            'month',
+            'active',
+            subscriptionMinutes,
+            session.amount_total / 100,
+            session.currency,
+            'month',
+            new Date(session.created * 1000),
+            new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
+          ]
+        );
+
+        console.log(`✅ Updated guest session for user ${userId}`);
+      } catch (error) {
+        console.error('Error updating guest session:', error);
+      }
+    }
+
+    console.log('✅ Payment verification successful');
+
+    // Get subscription details if available
+    let subscription = null;
+    if (session.subscription) {
+      subscription = await stripe.subscriptions.retrieve(session.subscription);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        session: {
+          id: session.id,
+          paymentStatus: session.payment_status,
+          status: session.status,
+          amountTotal: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          createdAt: new Date(session.created * 1000)
+        },
+        subscription: subscription ? {
+          id: subscription.id,
+          status: subscription.status,
+          currentPeriodStart: new Date(subscription.current_period_start * 1000),
+          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+          amount: subscription.items.data[0]?.price.unit_amount / 100,
+          currency: subscription.currency
+        } : null
+      }
+    });
+
+  } catch (error) {
+    console.error('Verify payment session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify payment session'
+    });
+  }
+};
+
 module.exports = {
   createCheckoutSession,
   handleWebhook,
   getSubscriptionStatus,
+  getSubscriptionDetails,
+  getPaymentHistory,
+  verifyPaymentSession,
   cancelSubscription
 }; 

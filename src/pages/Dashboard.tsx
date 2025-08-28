@@ -123,25 +123,40 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      const res = await apiService.getProfile();
+      console.log('Profile API response:', res);
+      if (res.success) {
+        console.log('Profile data:', res.data.user);
+        setProfile(res.data.user);
+      } else {
+        setError(res.message || 'Failed to load profile');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        setLoading(true);
-        const res = await apiService.getProfile();
-        console.log('Profile API response:', res);
-        if (res.success) {
-          console.log('Profile data:', res.data.user);
-          setProfile(res.data.user);
-        } else {
-          setError(res.message || 'Failed to load profile');
-        }
-      } catch (err: any) {
-        setError(err.message || 'Failed to load profile');
-      } finally {
-        setLoading(false);
+    fetchProfile();
+  }, []);
+
+  // Refresh profile data when component becomes visible (e.g., after payment verification)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchProfile();
       }
     };
-    fetchProfile();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   if (loading) {
@@ -160,8 +175,11 @@ const Dashboard: React.FC = () => {
   const plan = subscription.plan || 'free';
 
   let planLabel = '';
-  if (plan === 'pro') {
-    planLabel = 'Monthly Paid (3000 min)';
+  const subscriptionStatus = profile?.subscription?.status;
+  const isCanceling = subscriptionStatus === 'canceling' || subscriptionStatus === 'canceled';
+  
+  if (plan === 'pro' || plan === 'monthly') {
+    planLabel = isCanceling ? 'Monthly Paid (3000 min) - Canceling' : 'Monthly Paid (3000 min)';
   } else if (plan === 'free') {
     planLabel = 'Free Plan (60 min)';
   } else {
@@ -461,18 +479,22 @@ const Dashboard: React.FC = () => {
               <p className="text-gray-600 mb-2">Current Plan</p>
               <div className="text-lg font-bold text-purple-600">{planLabel}</div>
             </div>
-            {plan !== 'pro' ? (
+            {plan === 'free' ? (
               <Link 
                 to="/pricing" 
                 className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white py-3 px-6 rounded-2xl text-center font-semibold hover:from-purple-600 hover:to-purple-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
               >
                 Upgrade to Pro
               </Link>
-            ) : (
-              <div className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-3 px-6 rounded-2xl text-center font-semibold">
-                Pro Plan Active
-              </div>
-            )}
+                         ) : (
+               <div className={`w-full text-white py-3 px-6 rounded-2xl text-center font-semibold ${
+                 isCanceling 
+                   ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' 
+                   : 'bg-gradient-to-r from-green-500 to-green-600'
+               }`}>
+                 {isCanceling ? 'Pro Plan - Canceling' : 'Pro Plan Active'}
+               </div>
+             )}
           </div>
           
           {/* Account Settings Card */}

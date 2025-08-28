@@ -28,7 +28,7 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
-      process.env.FRONTEND_URL || 'http://localhost:5173',
+      process.env.APP_URL || 'http://localhost:5173',
       'http://localhost:5173', // Vite default port
       'https://voicemessage2text.com', // Production frontend
       'https://www.voicemessage2text.com' // Production frontend with www

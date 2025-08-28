@@ -17,9 +17,18 @@ const getProfile = async (req, res) => {
          u.created_at, u.updated_at,
          s.plan, s.type, s.subscription_minutes, s.used_minutes as sub_used_minutes, s.status as subscription_status
        FROM users u
-       LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
+       LEFT JOIN (
+         SELECT s1.*
+         FROM subscriptions s1
+         WHERE s1.status IN ('active', 'canceling')
+         AND s1.user_id = ?
+         ORDER BY 
+           CASE WHEN s1.plan != 'free' THEN 1 ELSE 2 END,
+           s1.created_at DESC
+         LIMIT 1
+       ) s ON u.id = s.user_id
        WHERE u.id = ?`,
-      [userId]
+      [userId, userId]
     );
 
     if (users.length === 0) {
@@ -151,9 +160,18 @@ const updateProfile = async (req, res) => {
          u.created_at, u.updated_at,
          s.plan, s.type, s.subscription_minutes, s.used_minutes as sub_used_minutes, s.status as subscription_status
        FROM users u
-       LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
+       LEFT JOIN (
+         SELECT s1.*
+         FROM subscriptions s1
+         WHERE s1.status IN ('active', 'canceling')
+         AND s1.user_id = ?
+         ORDER BY 
+           CASE WHEN s1.plan != 'free' THEN 1 ELSE 2 END,
+           s1.created_at DESC
+         LIMIT 1
+       ) s ON u.id = s.user_id
        WHERE u.id = ?`,
-      [userId]
+      [userId, userId]
     );
 
     if (users.length === 0) {
