@@ -19,6 +19,7 @@ import TranscriptionHistory from './pages/TranscriptionHistory'
 import UpdateProfile from './pages/UpdateProfile'
 import SubscriptionSuccess from './pages/SubscriptionSuccess'
 import SubscriptionCancel from './pages/SubscriptionCancel'
+import SubscriptionFailed from './pages/SubscriptionFailed'
 import SubscriptionManagement from './pages/SubscriptionManagement'
 import NotFound from './pages/NotFound'
 
@@ -97,6 +98,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <SubscriptionCancel />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/subscription/failed" 
+                  element={
+                    <ProtectedRoute>
+                      <SubscriptionFailed />
                     </ProtectedRoute>
                   } 
                 />

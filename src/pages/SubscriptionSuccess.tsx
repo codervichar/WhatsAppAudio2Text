@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircle, ArrowRight, Home, User, CreditCard, Calendar, Clock } from 'lucide-react';
+import { CheckCircle, ArrowRight, Home, User, CreditCard, Calendar, Clock, XCircle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 
@@ -21,25 +21,54 @@ const SubscriptionSuccess: React.FC = () => {
         return;
       }
 
+      // Add timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        setError('Payment verification timed out. Please check your subscription status or contact support.');
+        setIsLoading(false);
+      }, 30000); // 30 seconds timeout
+
       try {
         console.log('🔍 Verifying payment session:', sessionId);
         // Verify the payment session
         const response = await apiService.verifyPaymentSession(sessionId);
         
+        clearTimeout(timeoutId); // Clear timeout on success
+        
         if (response.success) {
-          setPaymentDetails(response.data);
-          // Refresh user profile data to get updated subscription info
-          try {
-            await updateProfile({});
-            console.log('✅ User profile refreshed after payment verification');
-          } catch (profileError) {
-            console.warn('⚠️ Failed to refresh user profile:', profileError);
+          const sessionData = response.data?.session;
+          
+          // Check payment status
+          if (sessionData?.paymentStatus === 'paid') {
+            setPaymentDetails(response.data);
+            // Refresh user profile data to get updated subscription info
+            try {
+              // Get fresh user data instead of trying to update with empty object
+              const profileResponse = await apiService.getProfile();
+              if (profileResponse.success && profileResponse.data?.user) {
+                // Update local user data with fresh subscription info
+                const updatedUser = profileResponse.data.user;
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+                // Update the user state in context
+                updateProfile({ first_name: updatedUser.first_name, last_name: updatedUser.last_name });
+                console.log('✅ User profile refreshed after payment verification');
+              }
+            } catch (profileError) {
+              console.warn('⚠️ Failed to refresh user profile:', profileError);
+              // Don't fail the entire flow if profile refresh fails
+            }
+          } else if (sessionData?.paymentStatus === 'unpaid') {
+            setError('Payment was not completed. Please try again or contact support.');
+          } else if (sessionData?.paymentStatus === 'canceled') {
+            setError('Payment was canceled. No charges were made to your account.');
+          } else {
+            setError(`Payment status: ${sessionData?.paymentStatus || 'unknown'}. Please contact support.`);
           }
         } else {
           console.error('Payment verification failed:', response);
           setError(response.message || 'Failed to verify payment');
         }
       } catch (err) {
+        clearTimeout(timeoutId); // Clear timeout on error
         console.error('Payment verification error:', err);
         // Provide more specific error message
         if (err instanceof Error) {
@@ -53,7 +82,7 @@ const SubscriptionSuccess: React.FC = () => {
     };
 
     verifyPayment();
-  }, [sessionId]);
+  }, [sessionId, updateProfile]);
 
   if (isLoading) {
     return (
@@ -81,7 +110,7 @@ const SubscriptionSuccess: React.FC = () => {
         
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
           <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-6">
-            <CheckCircle className="h-8 w-8 text-red-600" />
+            <XCircle className="h-8 w-8 text-red-600" />
           </div>
 
           <h1 className="text-2xl font-bold text-gray-900 mb-4">
@@ -93,9 +122,17 @@ const SubscriptionSuccess: React.FC = () => {
           </p>
 
           <div className="space-y-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full flex items-center justify-center px-4 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors duration-200"
+            >
+              <RefreshCw className="h-5 w-5 mr-2" />
+              Try Again
+            </button>
+            
             <Link
               to="/dashboard"
-              className="w-full flex items-center justify-center px-4 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors duration-200"
+              className="w-full flex items-center justify-center px-4 py-3 border border-blue-600 text-blue-600 font-medium rounded-lg hover:bg-blue-50 transition-colors duration-200"
             >
               <Home className="h-5 w-5 mr-2" />
               Go to Dashboard

@@ -808,6 +808,14 @@ const verifyPaymentSession = async (req, res) => {
       });
     }
 
+    // Check if session is expired or invalid
+    if (session.status === 'expired') {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment session has expired. Please try again.'
+      });
+    }
+
     // Verify the session belongs to this user or was created as a guest
     const sessionUserId = session.metadata?.userId;
     console.log('🔐 User verification:', { sessionUserId, currentUserId: userId.toString() });
@@ -820,8 +828,16 @@ const verifyPaymentSession = async (req, res) => {
       });
     }
 
+    // Check payment status first
+    if (session.payment_status !== 'paid') {
+      return res.status(400).json({
+        success: false,
+        message: `Payment not completed. Status: ${session.payment_status}`
+      });
+    }
+
     // If this was a guest session, update the user's subscription status
-    if (sessionUserId === 'guest' && session.payment_status === 'paid') {
+    if (sessionUserId === 'guest') {
       console.log('🔄 Processing guest session for user:', userId);
       try {
         // Update user subscription status
