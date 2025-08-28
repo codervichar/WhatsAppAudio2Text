@@ -223,28 +223,48 @@ const handleCheckoutSessionCompleted = async (session) => {
 
     const user = users[0];
 
-    // Store payment details
-    await pool.execute(
-      `INSERT INTO payment_history (
-        user_id,
-        stripe_session_id,
-        amount,
-        currency,
-        payment_status,
-        plan_type,
-        payment_method,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-      [
-        userId,
-        session.id,
-        session.amount_total / 100, // Convert from cents
-        session.currency,
-        session.payment_status,
-        planType,
-        session.payment_method_types?.[0] || 'card'
-      ]
+    // Check if payment record already exists
+    const [existingPayment] = await pool.execute(
+      'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+      [session.id]
     );
+
+    // Only insert payment details if record doesn't exist
+    if (existingPayment.length === 0) {
+      try {
+        await pool.execute(
+          `INSERT INTO payment_history (
+            user_id,
+            stripe_session_id,
+            amount,
+            currency,
+            payment_status,
+            plan_type,
+            payment_method,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            session.id,
+            session.amount_total / 100, // Convert from cents
+            session.currency,
+            session.payment_status,
+            planType,
+            session.payment_method_types?.[0] || 'card'
+          ]
+        );
+        console.log(`✅ Payment record created for session ${session.id}`);
+      } catch (insertError) {
+        // Handle race condition where another process might have inserted the record
+        if (insertError.code === 'ER_DUP_ENTRY') {
+          console.log(`ℹ️ Payment record already exists for session ${session.id} (race condition)`);
+        } else {
+          throw insertError;
+        }
+      }
+    } else {
+      console.log(`ℹ️ Payment record already exists for session ${session.id}`);
+    }
 
     // Update user subscription status and add Stripe customer ID
     await pool.execute(
@@ -291,37 +311,57 @@ const handleSubscriptionCreated = async (subscription) => {
       }
     }
 
-    // Insert subscription record with detailed information
-    await pool.execute(
-      `INSERT INTO subscriptions (
-        user_id, 
-        subscription_id, 
-        plan, 
-        type, 
-        status, 
-        subscription_minutes,
-        amount,
-        currency,
-        billing_interval,
-        current_period_start,
-        current_period_end,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-      [
-        userId,
-        subscription.id,
-        planType,
-        subscription.items.data[0].price.recurring?.interval || 'month',
-        subscription.status,
-        subscriptionMinutes,
-        subscription.items.data[0].price.unit_amount / 100, // Convert from cents
-        subscription.currency,
-        subscription.items.data[0].price.recurring?.interval || 'month',
-        new Date(subscription.current_period_start * 1000),
-        new Date(subscription.current_period_end * 1000)
-      ]
+    // Check if subscription record already exists
+    const [existingSubscription] = await pool.execute(
+      'SELECT id FROM subscriptions WHERE subscription_id = ?',
+      [subscription.id]
     );
+
+    // Only insert subscription record if it doesn't exist
+    if (existingSubscription.length === 0) {
+      try {
+        await pool.execute(
+          `INSERT INTO subscriptions (
+            user_id, 
+            subscription_id, 
+            plan, 
+            type, 
+            status, 
+            subscription_minutes,
+            amount,
+            currency,
+            billing_interval,
+            current_period_start,
+            current_period_end,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            subscription.id,
+            planType,
+            subscription.items.data[0].price.recurring?.interval || 'month',
+            subscription.status,
+            subscriptionMinutes,
+            subscription.items.data[0].price.unit_amount / 100, // Convert from cents
+            subscription.currency,
+            subscription.items.data[0].price.recurring?.interval || 'month',
+            new Date(subscription.current_period_start * 1000),
+            new Date(subscription.current_period_end * 1000)
+          ]
+        );
+        console.log(`✅ Subscription record created for subscription ${subscription.id}`);
+      } catch (insertError) {
+        // Handle race condition where another process might have inserted the record
+        if (insertError.code === 'ER_DUP_ENTRY') {
+          console.log(`ℹ️ Subscription record already exists for subscription ${subscription.id} (race condition)`);
+        } else {
+          throw insertError;
+        }
+      }
+    } else {
+      console.log(`ℹ️ Subscription record already exists for subscription ${subscription.id}`);
+    }
 
     // Update user with subscription details
     await pool.execute(
@@ -794,61 +834,101 @@ const verifyPaymentSession = async (req, res) => {
           [session.customer, userId]
         );
 
-        // Store payment details
-        await pool.execute(
-          `INSERT INTO payment_history (
-            user_id,
-            stripe_session_id,
-            amount,
-            currency,
-            payment_status,
-            plan_type,
-            payment_method,
-            created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [
-            userId,
-            session.id,
-            session.amount_total / 100,
-            session.currency,
-            session.payment_status,
-            session.metadata?.planType || 'monthly',
-            session.payment_method_types?.[0] || 'card'
-          ]
+        // Check if payment record already exists
+        const [existingPayment] = await pool.execute(
+          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+          [session.id]
         );
 
-        // Create subscription record
-        const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
-        await pool.execute(
-          `INSERT INTO subscriptions (
-            user_id,
-            subscription_id,
-            plan,
-            type,
-            status,
-            subscription_minutes,
-            amount,
-            currency,
-            billing_interval,
-            current_period_start,
-            current_period_end,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-          [
-            userId,
-            session.subscription || null,
-            session.metadata?.planType || 'monthly',
-            'month',
-            'active',
-            subscriptionMinutes,
-            session.amount_total / 100,
-            session.currency,
-            'month',
-            new Date(session.created * 1000),
-            new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
-          ]
+        // Only insert payment details if record doesn't exist
+        if (existingPayment.length === 0) {
+          try {
+            await pool.execute(
+              `INSERT INTO payment_history (
+                user_id,
+                stripe_session_id,
+                amount,
+                currency,
+                payment_status,
+                plan_type,
+                payment_method,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                session.id,
+                session.amount_total / 100,
+                session.currency,
+                session.payment_status,
+                session.metadata?.planType || 'monthly',
+                session.payment_method_types?.[0] || 'card'
+              ]
+            );
+            console.log(`✅ Payment record created for session ${session.id}`);
+          } catch (insertError) {
+            // Handle race condition where another process might have inserted the record
+            if (insertError.code === 'ER_DUP_ENTRY') {
+              console.log(`ℹ️ Payment record already exists for session ${session.id} (race condition)`);
+            } else {
+              throw insertError;
+            }
+          }
+        } else {
+          console.log(`ℹ️ Payment record already exists for session ${session.id}`);
+        }
+
+        // Check if subscription record already exists
+        const [existingSubscription] = await pool.execute(
+          'SELECT id FROM subscriptions WHERE user_id = ? AND subscription_id = ?',
+          [userId, session.subscription || null]
         );
+
+        // Only create subscription record if it doesn't exist
+        if (existingSubscription.length === 0) {
+          const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
+          try {
+            await pool.execute(
+              `INSERT INTO subscriptions (
+                user_id,
+                subscription_id,
+                plan,
+                type,
+                status,
+                subscription_minutes,
+                amount,
+                currency,
+                billing_interval,
+                current_period_start,
+                current_period_end,
+                created_at,
+                updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                session.subscription || null,
+                session.metadata?.planType || 'monthly',
+                'month',
+                'active',
+                subscriptionMinutes,
+                session.amount_total / 100,
+                session.currency,
+                'month',
+                new Date(session.created * 1000),
+                new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
+              ]
+            );
+            console.log(`✅ Subscription record created for user ${userId}`);
+          } catch (insertError) {
+            // Handle race condition where another process might have inserted the record
+            if (insertError.code === 'ER_DUP_ENTRY') {
+              console.log(`ℹ️ Subscription record already exists for user ${userId} (race condition)`);
+            } else {
+              throw insertError;
+            }
+          }
+        } else {
+          console.log(`ℹ️ Subscription record already exists for user ${userId}`);
+        }
 
         console.log(`✅ Updated guest session for user ${userId}`);
       } catch (error) {
