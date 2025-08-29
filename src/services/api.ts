@@ -199,6 +199,12 @@ class ApiService {
     });
   }
 
+  async reactivateSubscription(): Promise<ApiResponse<any>> {
+    return this.request<any>('/stripe/reactivate-subscription', {
+      method: 'POST',
+    });
+  }
+
   // Transcription endpoints
   async getTranscriptionHistory(params?: {
     page?: number;

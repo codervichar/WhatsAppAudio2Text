@@ -112,7 +112,7 @@ const register = async (req, res) => {
           wtp_number,
           language: language || 'en',
           is_premium: false,
-          subscription_plan: 'free',
+
           subscription_minutes: parseInt(process.env.FREE_MONTHLY_MINUTES) || 30
         },
         accessToken,

@@ -54,6 +54,26 @@ const SubscriptionManagement: React.FC = () => {
     }
   };
 
+  const handleReactivate = async () => {
+    try {
+      setDowngrading(true);
+      const response = await apiService.reactivateSubscription();
+      
+      if (response.success) {
+        // Refresh subscription data
+        await fetchSubscriptionDetails();
+        alert('Your subscription has been reactivated successfully!');
+      } else {
+        alert(response.message || 'Failed to reactivate subscription');
+      }
+    } catch (err) {
+      console.error('Error reactivating subscription:', err);
+      alert('Failed to reactivate subscription. Please try again.');
+    } finally {
+      setDowngrading(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -257,18 +277,38 @@ const SubscriptionManagement: React.FC = () => {
             {!isCanceling && (
               <div className="border-t border-gray-200 pt-6">
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <button
-                    onClick={() => setShowDowngradeConfirm(true)}
-                    className="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors duration-200"
-                  >
-                    Downgrade to Free Plan
-                  </button>
-                  <Link
-                    to="/pricing"
-                    className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors duration-200 text-center"
-                  >
-                    Change Plan
-                  </Link>
+                  {subscription.status === 'canceling' ? (
+                    <>
+                      <button
+                        onClick={handleReactivate}
+                        disabled={downgrading}
+                        className="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-colors duration-200 disabled:opacity-50"
+                      >
+                        {downgrading ? 'Processing...' : 'Reactivate Subscription'}
+                      </button>
+                      <Link
+                        to="/pricing"
+                        className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors duration-200 text-center"
+                      >
+                        Change Plan
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setShowDowngradeConfirm(true)}
+                        className="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors duration-200"
+                      >
+                        Downgrade to Free Plan
+                      </button>
+                      <Link
+                        to="/pricing"
+                        className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors duration-200 text-center"
+                      >
+                        Change Plan
+                      </Link>
+                    </>
+                  )}
                 </div>
               </div>
             )}

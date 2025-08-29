@@ -354,16 +354,14 @@ const handleCheckoutSessionCompleted = async (session) => {
       const currentStripeCustId = user.stripe_cust_id;
       const stripeCustId = currentStripeCustId || session.customer;
       
-      // Comprehensive user update
+      // Update user subscription status
       await pool.execute(
         `UPDATE users SET 
          is_subscribed = 1,
          stripe_cust_id = ?,
-         subscription_plan = ?,
-         subscription_status = 'active',
          updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
-        [stripeCustId, planType, userId]
+        [stripeCustId, userId]
       );
 
       console.log(`✅ User ${userId} subscription status updated:`);
@@ -493,14 +491,15 @@ const handleSubscriptionCreated = async (subscription) => {
       }
     }
 
-    // Check if subscription record already exists
-    const [existingSubscription] = await pool.execute(
-      'SELECT id FROM subscriptions WHERE subscription_id = ?',
-      [subscription.id]
+    // Check for existing subscriptions for this user
+    const [existingSubscriptions] = await pool.execute(
+      'SELECT id, status, plan FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+      [userId]
     );
 
-    // Only insert subscription record if it doesn't exist
-    if (existingSubscription.length === 0) {
+    // Handle subscription creation based on existing subscriptions
+    if (existingSubscriptions.length === 0) {
+      // No existing subscription - create new one
       try {
         await pool.execute(
           `INSERT INTO subscriptions (
@@ -532,9 +531,8 @@ const handleSubscriptionCreated = async (subscription) => {
             new Date(subscription.current_period_end * 1000)
           ]
         );
-        console.log(`✅ Subscription record created for subscription ${subscription.id}`);
+        console.log(`✅ New subscription record created for user ${userId}`);
       } catch (insertError) {
-        // Handle race condition where another process might have inserted the record
         if (insertError.code === 'ER_DUP_ENTRY') {
           console.log(`ℹ️ Subscription record already exists for subscription ${subscription.id} (race condition)`);
         } else {
@@ -542,17 +540,84 @@ const handleSubscriptionCreated = async (subscription) => {
         }
       }
     } else {
-      console.log(`ℹ️ Subscription record already exists for subscription ${subscription.id}`);
+      const existingSubscription = existingSubscriptions[0];
+      
+      if (existingSubscription.plan === 'free') {
+        // Free plan user upgrading - update existing to 'upgrade' status and create new active subscription
+        await pool.execute(
+          `UPDATE subscriptions SET 
+           status = 'upgrade',
+           updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [existingSubscription.id]
+        );
+        
+        // Create new active subscription
+        await pool.execute(
+          `INSERT INTO subscriptions (
+            user_id, 
+            subscription_id, 
+            plan, 
+            type, 
+            status, 
+            subscription_minutes,
+            amount,
+            currency,
+            billing_interval,
+            current_period_start,
+            current_period_end,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            subscription.id,
+            planType,
+            subscription.items.data[0].price.recurring?.interval || 'month',
+            subscription.status,
+            subscriptionMinutes,
+            subscription.items.data[0].price.unit_amount / 100, // Convert from cents
+            subscription.currency,
+            subscription.items.data[0].price.recurring?.interval || 'month',
+            new Date(subscription.current_period_start * 1000),
+            new Date(subscription.current_period_end * 1000)
+          ]
+        );
+        console.log(`🔄 Free plan user ${userId} upgraded - old subscription marked as 'upgrade', new active subscription created`);
+      } else {
+        // Already subscribed user - update existing subscription
+        await pool.execute(
+          `UPDATE subscriptions SET 
+           status = 'active',
+           plan = ?,
+           subscription_minutes = ?,
+           amount = ?,
+           currency = ?,
+           current_period_start = ?,
+           current_period_end = ?,
+           updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [
+            planType,
+            subscriptionMinutes,
+            subscription.items.data[0].price.unit_amount / 100,
+            subscription.currency,
+            new Date(subscription.current_period_start * 1000),
+            new Date(subscription.current_period_end * 1000),
+            existingSubscription.id
+          ]
+        );
+        console.log(`✅ Existing subscription updated for user ${userId}`);
+      }
     }
 
-    // Update user with subscription details
+    // Update user subscription status
     await pool.execute(
       `UPDATE users SET 
-       subscription_plan = ?,
-       subscription_status = ?,
+       is_subscribed = 1,
        updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [planType, subscription.status, userId]
+      [userId]
     );
 
     console.log(`✅ Subscription created for user ${userId}: ${subscription.id}`);
@@ -636,11 +701,29 @@ const handleSubscriptionUpdated = async (subscription) => {
       
     // Inactive statuses - User loses access
     case 'canceled':
+      // Update user subscription status to free
       await pool.execute(
         'UPDATE users SET is_subscribed = 0 WHERE id = ?',
         [userId]
       );
-      console.log(`❌ User ${userId} subscription is canceled`);
+      
+      // Update subscription record to canceled with cancel_date
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'canceled',
+         plan = 'free',
+         plan_type = 'free',
+         subscription_minutes = 30,
+         amount = 0,
+         currency = 'usd',
+         billing_interval = 'monthly',
+         cancel_date = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE subscription_id = ?`,
+        [subscription.id]
+      );
+      
+      console.log(`❌ User ${userId} subscription canceled and moved to free plan`);
       break;
       
     case 'unpaid':
@@ -648,7 +731,7 @@ const handleSubscriptionUpdated = async (subscription) => {
         'UPDATE users SET is_subscribed = 0 WHERE id = ?',
         [userId]
       );
-      console.log(`💸 User ${userId} subscription is unpaid`);
+      console.log(`💸 User ${userId} subscription is unpaid - moved to free plan`);
       break;
       
     case 'incomplete':
@@ -656,7 +739,7 @@ const handleSubscriptionUpdated = async (subscription) => {
         'UPDATE users SET is_subscribed = 0 WHERE id = ?',
         [userId]
       );
-      console.log(`⏳ User ${userId} subscription is incomplete`);
+      console.log(`⏳ User ${userId} subscription is incomplete - moved to free plan`);
       break;
       
     case 'incomplete_expired':
@@ -664,15 +747,7 @@ const handleSubscriptionUpdated = async (subscription) => {
         'UPDATE users SET is_subscribed = 0 WHERE id = ?',
         [userId]
       );
-      console.log(`⏰ User ${userId} subscription is incomplete and expired`);
-      break;
-      
-    case 'unpaid':
-      await pool.execute(
-        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
-        [userId]
-      );
-      console.log(`💸 User ${userId} subscription is unpaid`);
+      console.log(`⏰ User ${userId} subscription is incomplete and expired - moved to free plan`);
       break;
       
     default:
@@ -1088,15 +1163,13 @@ const handlePaymentIntentSucceeded = async (invoice) => {
           ]
         );
 
-        // 2. Update user subscription status and details
+        // 2. Update user subscription status
         await pool.execute(
           `UPDATE users SET 
            is_subscribed = 1,
-           subscription_plan = ?,
-           subscription_status = 'active',
            updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [planType, userId]
+          [userId]
         );
 
         // 3. Create comprehensive payment history record
@@ -1232,22 +1305,61 @@ const handleSubscriptionDeleted = async (subscription) => {
     return;
   }
 
-  // Update subscription record
-  await pool.execute(
-    `UPDATE subscriptions SET 
-     status = 'canceled',
-     updated_at = CURRENT_TIMESTAMP
-     WHERE subscription_id = ?`,
-    [subscription.id]
-  );
+  console.log(`🗑️ Processing subscription deletion for user ${userId}, subscription ${subscription.id}`);
 
-  // Update user subscription status
-  await pool.execute(
-    'UPDATE users SET is_subscribed = false WHERE id = ?',
-    [userId]
-  );
+        // Update subscription record to canceled and free plan
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'canceled',
+         plan = 'free',
+         plan_type = 'free',
+         subscription_minutes = 30,
+         amount = 0,
+         currency = 'usd',
+         billing_interval = 'monthly',
+         cancel_date = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE subscription_id = ?`,
+        [subscription.id]
+      );
 
-  console.log(`Subscription canceled for user ${userId}`);
+        // Update user subscription status
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+
+  // Create payment history record for subscription deletion
+  try {
+    await pool.execute(
+      `INSERT INTO payment_history (
+        user_id,
+        stripe_session_id,
+        amount,
+        currency,
+        payment_status,
+        plan_type,
+        payment_method,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [
+        userId,
+        `deleted_${subscription.id}_${Date.now()}`,
+        0,
+        'usd',
+        'subscription_deleted',
+        'free',
+        'webhook'
+      ]
+    );
+    console.log(`✅ Payment history record created for subscription deletion`);
+  } catch (insertError) {
+    if (insertError.code !== 'ER_DUP_ENTRY') {
+      console.error('Error creating payment history for subscription deletion:', insertError);
+    }
+  }
+
+  console.log(`✅ Subscription deleted for user ${userId} - moved to free plan`);
 };
 
 // Handle payment succeeded
@@ -1293,15 +1405,13 @@ const handlePaymentSucceeded = async (invoice) => {
           ]
         );
 
-        // 2. Update user subscription status and details
+        // 2. Update user subscription status
         await pool.execute(
           `UPDATE users SET 
            is_subscribed = 1,
-           subscription_plan = ?,
-           subscription_status = 'active',
            updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [planType, userId]
+          [userId]
         );
 
         // 3. Create comprehensive payment history record
@@ -1581,6 +1691,8 @@ const cancelSubscription = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    console.log(`🔄 Canceling subscription for user ${userId} at period end`);
+
     // Get user's active subscription
     const [subscriptions] = await pool.execute(
       'SELECT subscription_id, status FROM subscriptions WHERE user_id = ? AND status IN ("active", "trialing")',
@@ -1597,6 +1709,59 @@ const cancelSubscription = async (req, res) => {
     const subscription = subscriptions[0];
     const subscriptionId = subscription.subscription_id;
 
+    console.log(`📋 Found subscription: ${subscriptionId}, status: ${subscription.status}`);
+    console.log(`🔍 Subscription ID type: ${typeof subscriptionId}`);
+    console.log(`🔍 Subscription ID length: ${subscriptionId ? subscriptionId.length : 'N/A'}`);
+    console.log(`🔍 Is subscription ID valid: ${subscriptionId && subscriptionId.startsWith('sub_')}`);
+
+    // Check if subscription_id is null, undefined, or invalid
+    if (!subscriptionId || subscriptionId === 'null' || subscriptionId === 'undefined' || subscriptionId.trim() === '') {
+      console.warn('⚠️ No Stripe subscription ID found, updating local database only');
+      
+      // Update local database - set status to 'canceling' to indicate scheduled cancellation
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'canceling',
+         cancel_date = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND status IN ("active", "trialing")`,
+        [userId]
+      );
+
+      // Create payment history record for cancellation
+      try {
+        await pool.execute(
+          `INSERT INTO payment_history (
+            user_id,
+            stripe_session_id,
+            amount,
+            currency,
+            payment_status,
+            plan_type,
+            payment_method,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            'local_cancellation',
+            0,
+            'usd',
+            'canceled_end_period',
+            'subscription',
+            'local'
+          ]
+        );
+        console.log(`✅ Payment history record created for local cancellation`);
+      } catch (historyError) {
+        console.warn('⚠️ Failed to create payment history record:', historyError.message);
+      }
+
+      return res.json({
+        success: true,
+        message: 'Subscription will be canceled at the end of the current billing period (local update only - no Stripe subscription)'
+      });
+    }
+
     // Check if Stripe is initialized
     if (!stripe) {
       console.warn('⚠️ Stripe not configured, updating local database only');
@@ -1605,6 +1770,7 @@ const cancelSubscription = async (req, res) => {
       await pool.execute(
         `UPDATE subscriptions SET 
          status = 'canceling',
+         cancel_date = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
          WHERE subscription_id = ?`,
         [subscriptionId]
@@ -1616,19 +1782,54 @@ const cancelSubscription = async (req, res) => {
       });
     }
 
-    // Cancel subscription in Stripe
+    // First, verify the subscription exists in Stripe
+    console.log(`🔍 Verifying subscription exists in Stripe: ${subscriptionId}`);
     try {
-      await stripe.subscriptions.update(subscriptionId, {
+      const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+      console.log(`✅ Subscription found in Stripe: ${stripeSubscription.id}`);
+      console.log(`📊 Current Stripe status: ${stripeSubscription.status}`);
+      console.log(`📊 Current cancel_at_period_end: ${stripeSubscription.cancel_at_period_end}`);
+    } catch (verifyError) {
+      console.error('❌ Subscription not found in Stripe:', verifyError.message);
+      console.error('❌ This subscription ID may be invalid or deleted');
+      
+      // Update local database to reflect the invalid subscription
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'canceled',
+         cancel_date = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE subscription_id = ?`,
+        [subscriptionId]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Subscription marked as canceled (subscription not found in Stripe)'
+      });
+    }
+
+    // Cancel subscription in Stripe - only end-of-period cancellation
+    console.log(`🔄 Attempting to cancel Stripe subscription: ${subscriptionId}`);
+    try {
+      const result = await stripe.subscriptions.update(subscriptionId, {
         cancel_at_period_end: true
       });
-      console.log(`✅ Stripe subscription ${subscriptionId} canceled successfully`);
+      console.log(`✅ Stripe subscription ${subscriptionId} scheduled for cancellation at period end`);
+      console.log(`📊 Stripe response status: ${result.status}`);
+      console.log(`📊 Stripe cancel_at_period_end: ${result.cancel_at_period_end}`);
+      console.log(`📊 Stripe current_period_end: ${new Date(result.current_period_end * 1000).toISOString()}`);
     } catch (stripeError) {
       console.error('❌ Stripe cancellation failed:', stripeError.message);
+      console.error('❌ Stripe error type:', stripeError.type);
+      console.error('❌ Stripe error code:', stripeError.code);
+      console.error('❌ Stripe error param:', stripeError.param);
       
       // If Stripe fails, still update local database
       await pool.execute(
         `UPDATE subscriptions SET 
          status = 'canceling',
+         cancel_date = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
          WHERE subscription_id = ?`,
         [subscriptionId]
@@ -1640,18 +1841,49 @@ const cancelSubscription = async (req, res) => {
       });
     }
 
-    // Update local database - set status to 'canceling' to indicate scheduled cancellation
+    // Update local database - set status to 'canceling' and add cancel_date
     await pool.execute(
       `UPDATE subscriptions SET 
        status = 'canceling',
+       cancel_date = CURRENT_TIMESTAMP,
        updated_at = CURRENT_TIMESTAMP
        WHERE subscription_id = ?`,
       [subscriptionId]
     );
 
+    // Create payment history record for cancellation
+    try {
+      await pool.execute(
+        `INSERT INTO payment_history (
+          user_id,
+          stripe_session_id,
+          amount,
+          currency,
+          payment_status,
+          plan_type,
+          payment_method,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          userId,
+          subscriptionId,
+          0,
+          'usd',
+          'canceled_end_period',
+          'subscription',
+          'webhook'
+        ]
+      );
+      console.log(`✅ Payment history record created for subscription cancellation`);
+    } catch (historyError) {
+      console.warn('⚠️ Failed to create payment history record:', historyError.message);
+    }
+
     res.json({
       success: true,
-      message: 'Subscription will be canceled at the end of the current billing period'
+      message: 'Subscription will be canceled at the end of the current billing period',
+      cancellationType: 'end_of_period',
+      subscriptionId: subscriptionId
     });
 
   } catch (error) {
@@ -1659,6 +1891,187 @@ const cancelSubscription = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to cancel subscription: ' + error.message
+    });
+  }
+};
+
+// @desc    Reactivate subscription (remove cancellation)
+// @route   POST /api/stripe/reactivate-subscription
+// @access  Private
+const reactivateSubscription = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    console.log(`🔄 Reactivating subscription for user ${userId}`);
+
+    // Get user's canceling subscription
+    const [subscriptions] = await pool.execute(
+      'SELECT subscription_id, status FROM subscriptions WHERE user_id = ? AND status = "canceling"',
+      [userId]
+    );
+
+    if (subscriptions.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No canceling subscription found'
+      });
+    }
+
+    const subscription = subscriptions[0];
+    const subscriptionId = subscription.subscription_id;
+
+    console.log(`📋 Found canceling subscription: ${subscriptionId}`);
+
+    // Check if subscription_id is null (free plan or test subscription)
+    if (!subscriptionId) {
+      console.warn('⚠️ No Stripe subscription ID found, updating local database only');
+      
+      // Update local database - reactivate subscription
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'active',
+         cancel_date = NULL,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND status = "canceling"`,
+        [userId]
+      );
+
+      // Create payment history record for reactivation
+      try {
+        await pool.execute(
+          `INSERT INTO payment_history (
+            user_id,
+            stripe_session_id,
+            amount,
+            currency,
+            payment_status,
+            plan_type,
+            payment_method,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            'local_reactivation',
+            0,
+            'usd',
+            'reactivated',
+            'subscription',
+            'local'
+          ]
+        );
+        console.log(`✅ Payment history record created for local reactivation`);
+      } catch (historyError) {
+        console.warn('⚠️ Failed to create payment history record:', historyError.message);
+      }
+
+      return res.json({
+        success: true,
+        message: 'Subscription reactivated successfully (local update only - no Stripe subscription)'
+      });
+    }
+
+    // Check if Stripe is initialized
+    if (!stripe) {
+      console.warn('⚠️ Stripe not configured, updating local database only');
+      
+      // Update local database - reactivate subscription
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'active',
+         cancel_date = NULL,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE subscription_id = ?`,
+        [subscriptionId]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Subscription reactivated successfully (local update only)'
+      });
+    }
+
+    // Reactivate subscription in Stripe
+    try {
+      await stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: false
+      });
+      console.log(`✅ Stripe subscription ${subscriptionId} reactivated successfully`);
+    } catch (stripeError) {
+      console.error('❌ Stripe reactivation failed:', stripeError.message);
+      
+      // If Stripe fails, still update local database
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'active',
+         cancel_date = NULL,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE subscription_id = ?`,
+        [subscriptionId]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Subscription reactivated successfully (local update only - Stripe update failed)'
+      });
+    }
+
+    // Update local database - reactivate subscription
+    await pool.execute(
+      `UPDATE subscriptions SET 
+       status = 'active',
+       cancel_date = NULL,
+       updated_at = CURRENT_TIMESTAMP
+       WHERE subscription_id = ?`,
+      [subscriptionId]
+    );
+
+    // Create payment history record for reactivation
+    try {
+      await pool.execute(
+        `INSERT INTO payment_history (
+          user_id,
+          stripe_session_id,
+          amount,
+          currency,
+          payment_status,
+          plan_type,
+          payment_method,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          userId,
+          subscriptionId,
+          0,
+          'usd',
+          'reactivated',
+          'subscription',
+          'webhook'
+        ]
+      );
+      console.log(`✅ Payment history record created for reactivation: ${subscriptionId}`);
+    } catch (insertError) {
+      if (insertError.code !== 'ER_DUP_ENTRY') {
+        console.error('Error creating payment history for reactivation:', insertError);
+      }
+    }
+
+    console.log(`✅ Subscription reactivation completed for user ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Subscription reactivated successfully',
+      data: {
+        subscription_id: subscriptionId,
+        status: 'active',
+        reactivated_at: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error reactivating subscription:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error reactivating subscription'
     });
   }
 };
@@ -1973,14 +2386,16 @@ const verifyPaymentSession = async (req, res) => {
         console.log(`ℹ️ Payment history record already exists for session ${session.id}`);
       }
 
-      // 3. Create subscription record if it doesn't exist
-      const [existingSubscription] = await pool.execute(
-        'SELECT id FROM subscriptions WHERE user_id = ? AND subscription_id = ?',
-        [userId, session.subscription || null]
+      // 3. Handle subscription record creation/upgrade
+      const [existingSubscriptions] = await pool.execute(
+        'SELECT id, status, plan FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+        [userId]
       );
 
-      if (existingSubscription.length === 0) {
-        const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
+      const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
+      
+      if (existingSubscriptions.length === 0) {
+        // No existing subscription - create new one
         await pool.execute(
           `INSERT INTO subscriptions (
             user_id,
@@ -2011,9 +2426,77 @@ const verifyPaymentSession = async (req, res) => {
             new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
           ]
         );
-        console.log(`✅ Subscription record created for user ${userId}`);
+        console.log(`✅ New subscription record created for user ${userId}`);
       } else {
-        console.log(`ℹ️ Subscription record already exists for user ${userId}`);
+        const existingSubscription = existingSubscriptions[0];
+        
+        if (existingSubscription.plan === 'free') {
+          // Free plan user upgrading - update existing to 'upgrade' status and create new active subscription
+          await pool.execute(
+            `UPDATE subscriptions SET 
+             status = 'upgrade',
+             updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [existingSubscription.id]
+          );
+          
+          // Create new active subscription
+          await pool.execute(
+            `INSERT INTO subscriptions (
+              user_id,
+              subscription_id,
+              plan,
+              type,
+              status,
+              subscription_minutes,
+              amount,
+              currency,
+              billing_interval,
+              current_period_start,
+              current_period_end,
+              created_at,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+            [
+              userId,
+              session.subscription || null,
+              session.metadata?.planType || 'monthly',
+              'month',
+              'active',
+              subscriptionMinutes,
+              session.amount_total / 100,
+              session.currency,
+              'month',
+              new Date(session.created * 1000),
+              new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
+            ]
+          );
+          console.log(`🔄 Free plan user ${userId} upgraded - old subscription marked as 'upgrade', new active subscription created`);
+        } else {
+          // Already subscribed user - update existing subscription
+          await pool.execute(
+            `UPDATE subscriptions SET 
+             status = 'active',
+             plan = ?,
+             subscription_minutes = ?,
+             amount = ?,
+             currency = ?,
+             current_period_start = ?,
+             current_period_end = ?,
+             updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [
+              session.metadata?.planType || 'monthly',
+              subscriptionMinutes,
+              session.amount_total / 100,
+              session.currency,
+              new Date(session.created * 1000),
+              new Date((session.created + 30 * 24 * 60 * 60) * 1000),
+              existingSubscription.id
+            ]
+          );
+          console.log(`✅ Existing subscription updated for user ${userId}`);
+        }
       }
 
     } catch (error) {
@@ -2072,6 +2555,7 @@ module.exports = {
   getPaymentHistory,
   verifyPaymentSession,
   cancelSubscription,
+  reactivateSubscription,
   testWebhook,
   getWebhookInfo
 }; 

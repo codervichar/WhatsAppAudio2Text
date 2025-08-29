@@ -21,14 +21,14 @@ import SubscriptionSuccess from './pages/SubscriptionSuccess'
 import SubscriptionCancel from './pages/SubscriptionCancel'
 import SubscriptionFailed from './pages/SubscriptionFailed'
 import SubscriptionManagement from './pages/SubscriptionManagement'
-import PaymentTest from './pages/PaymentTest'
+
 import NotFound from './pages/NotFound'
 
 function App() {
   return (
     <HelmetProvider>
-      <AuthProvider>
-        <Router>
+      <Router>
+        <AuthProvider>
           <div className="flex flex-col min-h-screen gradient-bg">
             <Header />
             <main className="flex-grow pt-16">
@@ -118,14 +118,7 @@ function App() {
                     </ProtectedRoute>
                   } 
                 />
-                <Route 
-                  path="/payment-test" 
-                  element={
-                    <ProtectedRoute>
-                      <PaymentTest />
-                    </ProtectedRoute>
-                  } 
-                />
+
                 <Route 
                   path="*" 
                   element={<NotFound />} 
@@ -134,8 +127,8 @@ function App() {
             </main>
             <Footer />
           </div>
-        </Router>
-      </AuthProvider>
+        </AuthProvider>
+      </Router>
     </HelmetProvider>
   )
 }

@@ -15,7 +15,7 @@ const getProfile = async (req, res) => {
          u.id, u.first_name, u.last_name, u.email, u.phone_number, u.country_code, u.wtp_number, u.wa_language,
          u.is_subscribed, u.total_minutes, u.used_minutes,
          u.created_at, u.updated_at,
-         s.plan, s.type, s.subscription_minutes, s.used_minutes as sub_used_minutes, s.status as subscription_status
+         s.plan, s.type, s.subscription_minutes, s.used_minutes as sub_used_minutes, s.status
        FROM users u
        LEFT JOIN (
          SELECT s1.*
@@ -67,7 +67,7 @@ const getProfile = async (req, res) => {
           subscription: {
             plan: user.plan,
             type: user.type,
-            status: user.subscription_status,
+            status: user.status,
             subscription_minutes: user.subscription_minutes,
             used_minutes: user.sub_used_minutes,
             user_id: user.user_id // Ensure user_id is included for frontend logic
@@ -158,7 +158,7 @@ const updateProfile = async (req, res) => {
          u.id, u.first_name, u.last_name, u.email, u.phone_number, u.country_code, u.wtp_number, u.wa_language,
          u.is_subscribed, u.total_minutes, u.used_minutes,
          u.created_at, u.updated_at,
-         s.plan, s.type, s.subscription_minutes, s.used_minutes as sub_used_minutes, s.status as subscription_status
+         s.plan, s.type, s.subscription_minutes, s.used_minutes as sub_used_minutes, s.status
        FROM users u
        LEFT JOIN (
          SELECT s1.*
@@ -211,7 +211,7 @@ const updateProfile = async (req, res) => {
           subscription: {
             plan: user.plan,
             type: user.type,
-            status: user.subscription_status,
+            status: user.status,
             subscription_minutes: user.subscription_minutes,
             used_minutes: user.sub_used_minutes,
             user_id: user.user_id

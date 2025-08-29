@@ -8,6 +8,7 @@ const {
   getPaymentHistory,
   verifyPaymentSession,
   cancelSubscription,
+  reactivateSubscription,
   testWebhook,
   getWebhookInfo
 } = require('../controllers/stripeController');
@@ -48,6 +49,11 @@ router.post('/verify-session', authenticateToken, verifyPaymentSession);
 // @desc    Cancel user subscription
 // @access  Private
 router.post('/cancel-subscription', authenticateToken, cancelSubscription);
+
+// @route   POST /api/stripe/reactivate-subscription
+// @desc    Reactivate user subscription
+// @access  Private
+router.post('/reactivate-subscription', authenticateToken, reactivateSubscription);
 
 // @route   GET /api/stripe/webhook-test
 // @desc    Test webhook endpoint

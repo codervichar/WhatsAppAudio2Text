@@ -148,6 +148,28 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleReactivateSubscription = async () => {
+    try {
+      setCanceling(true);
+      const response = await apiService.reactivateSubscription();
+      
+      if (response.success) {
+        setNotification({ 
+          message: 'Your subscription has been reactivated successfully!', 
+          type: 'success' 
+        });
+        // Refresh profile data to update subscription status
+        await fetchProfile();
+      } else {
+        setNotification({ message: response.message || 'Failed to reactivate subscription', type: 'error' });
+      }
+    } catch (err: any) {
+      setNotification({ message: err.message || 'Failed to reactivate subscription. Please try again.', type: 'error' });
+    } finally {
+      setCanceling(false);
+    }
+  };
+
   const fetchProfile = async () => {
     try {
       setLoading(true);
@@ -563,13 +585,31 @@ const Dashboard: React.FC = () => {
                   >
                     Manage
                   </Link>
-                  {!isCanceling && (
+                  {!isCanceling ? (
                     <button
                       onClick={() => setShowCancelConfirm(true)}
                       className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-red-600 hover:to-red-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1"
                     >
                       <X className="w-3 h-3" />
                       Cancel
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleReactivateSubscription}
+                      disabled={canceling}
+                      className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1 disabled:opacity-50"
+                    >
+                      {canceling ? (
+                        <>
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-3 h-3" />
+                          Reactivate
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
@@ -668,6 +708,12 @@ const Dashboard: React.FC = () => {
                 >
                   Keep Subscription
                 </button>
+              </div>
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2 text-blue-700">
+                  <Shield className="w-4 h-4" />
+                  <span className="text-xs font-medium">Your subscription will remain active until the end of the current billing period</span>
+                </div>
               </div>
             </div>
           </div>
