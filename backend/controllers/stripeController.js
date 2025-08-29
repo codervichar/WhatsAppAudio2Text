@@ -24,6 +24,45 @@ try {
   console.warn('⚠️ Stripe functionality will be disabled');
 }
 
+// Utility function to safely convert Stripe timestamps to ISO strings
+const safeTimestampToISO = (timestamp) => {
+  if (!timestamp || timestamp === null || timestamp === undefined) {
+    return 'N/A';
+  }
+  try {
+    return new Date(timestamp * 1000).toISOString();
+  } catch (error) {
+    console.warn('⚠️ Invalid timestamp conversion:', timestamp, error.message);
+    return 'Invalid';
+  }
+};
+
+// Utility function to safely convert Stripe timestamps to Date objects for database
+const safeTimestampToDate = (timestamp) => {
+  if (!timestamp || timestamp === null || timestamp === undefined) {
+    return null;
+  }
+  try {
+    return new Date(timestamp * 1000);
+  } catch (error) {
+    console.warn('⚠️ Invalid timestamp conversion for database:', timestamp, error.message);
+    return null;
+  }
+};
+
+// Utility function to safely convert Stripe session timestamps to Date objects
+const safeSessionTimestampToDate = (timestamp) => {
+  if (!timestamp || timestamp === null || timestamp === undefined) {
+    return null;
+  }
+  try {
+    return new Date(timestamp * 1000);
+  } catch (error) {
+    console.warn('⚠️ Invalid session timestamp conversion:', timestamp, error.message);
+    return null;
+  }
+};
+
 // @desc    Create checkout session
 // @route   POST /api/stripe/create-checkout-session
 // @access  Private
@@ -527,8 +566,8 @@ const handleSubscriptionCreated = async (subscription) => {
             subscription.items.data[0].price.unit_amount / 100, // Convert from cents
             subscription.currency,
             subscription.items.data[0].price.recurring?.interval || 'month',
-            new Date(subscription.current_period_start * 1000),
-            new Date(subscription.current_period_end * 1000)
+            safeTimestampToDate(subscription.current_period_start),
+            safeTimestampToDate(subscription.current_period_end)
           ]
         );
         console.log(`✅ New subscription record created for user ${userId}`);
@@ -579,8 +618,8 @@ const handleSubscriptionCreated = async (subscription) => {
             subscription.items.data[0].price.unit_amount / 100, // Convert from cents
             subscription.currency,
             subscription.items.data[0].price.recurring?.interval || 'month',
-            new Date(subscription.current_period_start * 1000),
-            new Date(subscription.current_period_end * 1000)
+            safeTimestampToDate(subscription.current_period_start),
+            safeTimestampToDate(subscription.current_period_end)
           ]
         );
         console.log(`🔄 Free plan user ${userId} upgraded - old subscription marked as 'upgrade', new active subscription created`);
@@ -602,8 +641,8 @@ const handleSubscriptionCreated = async (subscription) => {
             subscriptionMinutes,
             subscription.items.data[0].price.unit_amount / 100,
             subscription.currency,
-            new Date(subscription.current_period_start * 1000),
-            new Date(subscription.current_period_end * 1000),
+            safeTimestampToDate(subscription.current_period_start),
+            safeTimestampToDate(subscription.current_period_end),
             existingSubscription.id
           ]
         );
@@ -621,7 +660,7 @@ const handleSubscriptionCreated = async (subscription) => {
     );
 
     console.log(`✅ Subscription created for user ${userId}: ${subscription.id}`);
-    console.log(`📅 Period: ${new Date(subscription.current_period_start * 1000).toISOString()} to ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+    console.log(`📅 Period: ${safeTimestampToISO(subscription.current_period_start)} to ${safeTimestampToISO(subscription.current_period_end)}`);
     console.log(`💰 Amount: ${subscription.currency} ${subscription.items.data[0].price.unit_amount / 100}`);
 
   } catch (error) {
@@ -650,8 +689,8 @@ const handleSubscriptionUpdated = async (subscription) => {
      WHERE subscription_id = ?`,
     [
       subscription.status, 
-      new Date(subscription.current_period_start * 1000),
-      new Date(subscription.current_period_end * 1000),
+      safeTimestampToDate(subscription.current_period_start),
+      safeTimestampToDate(subscription.current_period_end),
       subscription.id
     ]
   );
@@ -1157,8 +1196,8 @@ const handlePaymentIntentSucceeded = async (invoice) => {
             amount,
             subscription.currency,
             planType,
-            new Date(subscription.current_period_start * 1000),
-            new Date(subscription.current_period_end * 1000),
+            safeTimestampToDate(subscription.current_period_start),
+            safeTimestampToDate(subscription.current_period_end),
             subscription.id
           ]
         );
@@ -1215,7 +1254,7 @@ const handlePaymentIntentSucceeded = async (invoice) => {
         console.log(`   - Plan: ${planType}`);
         console.log(`   - Minutes: ${subscriptionMinutes}`);
         console.log(`   - Amount: ${subscription.currency} ${amount}`);
-        console.log(`   - Period: ${new Date(subscription.current_period_start * 1000).toISOString()} to ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+        console.log(`   - Period: ${safeTimestampToISO(subscription.current_period_start)} to ${safeTimestampToISO(subscription.current_period_end)}`);
         console.log(`   - Status: active`);
         console.log(`   - Minutes reset to 0`);
 
@@ -1399,8 +1438,8 @@ const handlePaymentSucceeded = async (invoice) => {
             amount,
             subscription.currency,
             planType,
-            new Date(subscription.current_period_start * 1000),
-            new Date(subscription.current_period_end * 1000),
+            safeTimestampToDate(subscription.current_period_start),
+            safeTimestampToDate(subscription.current_period_end),
             subscription.id
           ]
         );
@@ -1457,7 +1496,7 @@ const handlePaymentSucceeded = async (invoice) => {
         console.log(`   - Plan: ${planType}`);
         console.log(`   - Minutes: ${subscriptionMinutes}`);
         console.log(`   - Amount: ${subscription.currency} ${amount}`);
-        console.log(`   - Period: ${new Date(subscription.current_period_start * 1000).toISOString()} to ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+        console.log(`   - Period: ${safeTimestampToISO(subscription.current_period_start)} to ${safeTimestampToISO(subscription.current_period_end)}`);
         console.log(`   - Status: active`);
         console.log(`   - Minutes reset to 0`);
 
@@ -1818,7 +1857,7 @@ const cancelSubscription = async (req, res) => {
       console.log(`✅ Stripe subscription ${subscriptionId} scheduled for cancellation at period end`);
       console.log(`📊 Stripe response status: ${result.status}`);
       console.log(`📊 Stripe cancel_at_period_end: ${result.cancel_at_period_end}`);
-      console.log(`📊 Stripe current_period_end: ${new Date(result.current_period_end * 1000).toISOString()}`);
+      console.log(`📊 Stripe current_period_end: ${safeTimestampToISO(result.current_period_end)}`);
     } catch (stripeError) {
       console.error('❌ Stripe cancellation failed:', stripeError.message);
       console.error('❌ Stripe error type:', stripeError.type);
@@ -2422,8 +2461,8 @@ const verifyPaymentSession = async (req, res) => {
             session.amount_total / 100,
             session.currency,
             'month',
-            new Date(session.created * 1000),
-            new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
+            safeSessionTimestampToDate(session.created),
+            safeSessionTimestampToDate(session.created + 30 * 24 * 60 * 60) // 30 days from creation
           ]
         );
         console.log(`✅ New subscription record created for user ${userId}`);
@@ -2467,8 +2506,8 @@ const verifyPaymentSession = async (req, res) => {
               session.amount_total / 100,
               session.currency,
               'month',
-              new Date(session.created * 1000),
-              new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
+              safeSessionTimestampToDate(session.created),
+              safeSessionTimestampToDate(session.created + 30 * 24 * 60 * 60) // 30 days from creation
             ]
           );
           console.log(`🔄 Free plan user ${userId} upgraded - old subscription marked as 'upgrade', new active subscription created`);
@@ -2490,8 +2529,8 @@ const verifyPaymentSession = async (req, res) => {
               subscriptionMinutes,
               session.amount_total / 100,
               session.currency,
-              new Date(session.created * 1000),
-              new Date((session.created + 30 * 24 * 60 * 60) * 1000),
+              safeSessionTimestampToDate(session.created),
+              safeSessionTimestampToDate(session.created + 30 * 24 * 60 * 60),
               existingSubscription.id
             ]
           );
@@ -2525,13 +2564,13 @@ const verifyPaymentSession = async (req, res) => {
           amountTotal: session.amount_total / 100,
           currency: session.currency,
           customerEmail: session.customer_email,
-          createdAt: new Date(session.created * 1000)
+          createdAt: safeSessionTimestampToDate(session.created)
         },
         subscription: subscription ? {
           id: subscription.id,
           status: subscription.status,
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
-          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+          currentPeriodStart: safeTimestampToDate(subscription.current_period_start),
+          currentPeriodEnd: safeTimestampToDate(subscription.current_period_end),
           amount: subscription.items.data[0]?.price.unit_amount / 100,
           currency: subscription.currency
         } : null
