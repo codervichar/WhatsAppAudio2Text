@@ -211,12 +211,15 @@ const handleWebhook = async (req, res) => {
     console.log(`📨 Processing webhook event: ${event.type}`);
     
     switch (event.type) {
+      // Checkout Events
       case 'checkout.session.completed':
         await handleCheckoutSessionCompleted(event.data.object);
         break;
       case 'checkout.session.expired':
         await handleCheckoutSessionExpired(event.data.object);
         break;
+      
+      // Subscription Lifecycle Events
       case 'customer.subscription.created':
         await handleSubscriptionCreated(event.data.object);
         break;
@@ -229,6 +232,14 @@ const handleWebhook = async (req, res) => {
       case 'customer.subscription.trial_will_end':
         await handleSubscriptionTrialWillEnd(event.data.object);
         break;
+      case 'customer.subscription.paused':
+        await handleSubscriptionPaused(event.data.object);
+        break;
+      case 'customer.subscription.resumed':
+        await handleSubscriptionResumed(event.data.object);
+        break;
+      
+      // Payment Events
       case 'invoice.payment_succeeded':
         await handlePaymentSucceeded(event.data.object);
         break;
@@ -238,12 +249,32 @@ const handleWebhook = async (req, res) => {
       case 'invoice.payment_action_required':
         await handlePaymentActionRequired(event.data.object);
         break;
-      case 'customer.subscription.paused':
-        await handleSubscriptionPaused(event.data.object);
+      
+      // Additional Payment Events
+      case 'invoice.payment_requires_payment_method':
+        await handlePaymentRequiresPaymentMethod(event.data.object);
         break;
-      case 'customer.subscription.resumed':
-        await handleSubscriptionResumed(event.data.object);
+      case 'invoice.finalized':
+        await handleInvoiceFinalized(event.data.object);
         break;
+      case 'invoice.payment_intent_payment_failed':
+        await handlePaymentIntentFailed(event.data.object);
+        break;
+      case 'invoice.payment_intent_succeeded':
+        await handlePaymentIntentSucceeded(event.data.object);
+        break;
+      
+      // Customer Events
+      case 'customer.subscription.updated':
+        await handleSubscriptionUpdated(event.data.object);
+        break;
+      case 'customer.updated':
+        await handleCustomerUpdated(event.data.object);
+        break;
+      case 'customer.deleted':
+        await handleCustomerDeleted(event.data.object);
+        break;
+      
       default:
         console.log(`ℹ️ Unhandled event type: ${event.type}`);
     }
@@ -326,17 +357,23 @@ const handleCheckoutSessionCompleted = async (session) => {
       const currentStripeCustId = user.stripe_cust_id;
       const stripeCustId = currentStripeCustId || session.customer;
       
+      // Comprehensive user update
       await pool.execute(
         `UPDATE users SET 
          is_subscribed = 1,
          stripe_cust_id = ?,
+         subscription_plan = ?,
+         subscription_status = 'active',
          updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
-        [stripeCustId, userId]
+        [stripeCustId, planType, userId]
       );
 
-      console.log(`✅ User ${userId} subscription status updated. Stripe Customer ID: ${stripeCustId}`);
-      console.log(`💰 Payment amount: ${session.currency} ${session.amount_total / 100}`);
+      console.log(`✅ User ${userId} subscription status updated:`);
+      console.log(`   - Stripe Customer ID: ${stripeCustId}`);
+      console.log(`   - Plan: ${planType}`);
+      console.log(`   - Status: active`);
+      console.log(`   - Payment amount: ${session.currency} ${session.amount_total / 100}`);
     } else {
       console.log(`⚠️ Payment not completed for user ${userId}. Status: ${session.payment_status}`);
     }
@@ -557,15 +594,23 @@ const handleSubscriptionUpdated = async (subscription) => {
     ]
   );
 
-  // Update user subscription status based on subscription status
+  // Comprehensive subscription status management
   switch (subscription.status) {
+    // Active statuses - User has access
     case 'active':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+        [userId]
+      );
+      console.log(`✅ User ${userId} subscription is active`);
+      break;
+      
     case 'trialing':
       await pool.execute(
         'UPDATE users SET is_subscribed = 1 WHERE id = ?',
         [userId]
       );
-      console.log(`✅ User ${userId} subscription activated`);
+      console.log(`🆓 User ${userId} subscription is in trial`);
       break;
       
     case 'past_due':
@@ -576,16 +621,6 @@ const handleSubscriptionUpdated = async (subscription) => {
       console.log(`⚠️ User ${userId} subscription is past due`);
       break;
       
-    case 'canceled':
-    case 'unpaid':
-    case 'incomplete_expired':
-      await pool.execute(
-        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
-        [userId]
-      );
-      console.log(`❌ User ${userId} subscription deactivated`);
-      break;
-      
     case 'canceling':
       await pool.execute(
         'UPDATE users SET is_subscribed = 1 WHERE id = ?',
@@ -594,8 +629,92 @@ const handleSubscriptionUpdated = async (subscription) => {
       console.log(`🔄 User ${userId} subscription is being canceled`);
       break;
       
+    case 'paused':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+        [userId]
+      );
+      console.log(`⏸️ User ${userId} subscription is paused`);
+      break;
+      
+    // Inactive statuses - User loses access
+    case 'canceled':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+      console.log(`❌ User ${userId} subscription is canceled`);
+      break;
+      
+    case 'unpaid':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+      console.log(`💸 User ${userId} subscription is unpaid`);
+      break;
+      
+    case 'incomplete':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+      console.log(`⏳ User ${userId} subscription is incomplete`);
+      break;
+      
+    case 'incomplete_expired':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+      console.log(`⏰ User ${userId} subscription is incomplete and expired`);
+      break;
+      
+    case 'unpaid':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+      console.log(`💸 User ${userId} subscription is unpaid`);
+      break;
+      
     default:
       console.log(`ℹ️ Unknown subscription status: ${subscription.status} for user ${userId}`);
+      // Default to unsubscribed for unknown statuses
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+  }
+
+  // Create payment history record for status change
+  try {
+    await pool.execute(
+      `INSERT INTO payment_history (
+        user_id,
+        stripe_session_id,
+        amount,
+        currency,
+        payment_status,
+        plan_type,
+        payment_method,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [
+        userId,
+        `status_change_${subscription.id}_${Date.now()}`,
+        0, // No amount for status changes
+        'usd',
+        `status_${subscription.status}`,
+        subscription.items.data[0]?.price.recurring?.interval || 'monthly',
+        'webhook'
+      ]
+    );
+    console.log(`✅ Payment history record created for status change: ${subscription.status}`);
+  } catch (insertError) {
+    if (insertError.code !== 'ER_DUP_ENTRY') {
+      console.error('Error creating payment history for status change:', insertError);
+    }
   }
 
   console.log(`✅ Subscription updated for user ${userId}: ${subscription.status}`);
@@ -746,6 +865,367 @@ const handleSubscriptionResumed = async (subscription) => {
   console.log(`✅ Subscription resumed for user ${userId}`);
 };
 
+// Handle payment requires payment method
+const handlePaymentRequiresPaymentMethod = async (invoice) => {
+  if (invoice.subscription && stripe) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const userId = subscription.metadata?.userId;
+
+      if (userId) {
+        console.log(`⚠️ Payment requires payment method for user ${userId}, subscription ${subscription.id}`);
+
+        // Update subscription status
+        await pool.execute(
+          `UPDATE subscriptions SET 
+           status = 'incomplete',
+           updated_at = CURRENT_TIMESTAMP
+           WHERE subscription_id = ?`,
+          [subscription.id]
+        );
+
+        // Create payment history record
+        const [existingPayment] = await pool.execute(
+          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+          [invoice.id]
+        );
+
+        if (existingPayment.length === 0) {
+          try {
+            await pool.execute(
+              `INSERT INTO payment_history (
+                user_id,
+                stripe_session_id,
+                amount,
+                currency,
+                payment_status,
+                plan_type,
+                payment_method,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                invoice.id,
+                invoice.amount_due / 100,
+                invoice.currency,
+                'requires_payment_method',
+                subscription.items.data[0]?.price.recurring?.interval || 'monthly',
+                'card'
+              ]
+            );
+            console.log(`✅ Payment history record created for requires payment method: ${invoice.id}`);
+          } catch (insertError) {
+            if (insertError.code !== 'ER_DUP_ENTRY') {
+              console.error('Error creating payment history for requires payment method:', insertError);
+            }
+          }
+        }
+
+        console.log(`⚠️ Payment requires payment method for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error handling payment requires payment method:', error.message);
+    }
+  }
+};
+
+// Handle invoice finalized
+const handleInvoiceFinalized = async (invoice) => {
+  if (invoice.subscription && stripe) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const userId = subscription.metadata?.userId;
+
+      if (userId) {
+        console.log(`📄 Invoice finalized for user ${userId}, subscription ${subscription.id}`);
+
+        // Create payment history record if not exists
+        const [existingPayment] = await pool.execute(
+          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+          [invoice.id]
+        );
+
+        if (existingPayment.length === 0) {
+          try {
+            await pool.execute(
+              `INSERT INTO payment_history (
+                user_id,
+                stripe_session_id,
+                amount,
+                currency,
+                payment_status,
+                plan_type,
+                payment_method,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                invoice.id,
+                invoice.amount_due / 100,
+                invoice.currency,
+                'finalized',
+                subscription.items.data[0]?.price.recurring?.interval || 'monthly',
+                'card'
+              ]
+            );
+            console.log(`✅ Payment history record created for finalized invoice: ${invoice.id}`);
+          } catch (insertError) {
+            if (insertError.code !== 'ER_DUP_ENTRY') {
+              console.error('Error creating payment history for finalized invoice:', insertError);
+            }
+          }
+        }
+
+        console.log(`📄 Invoice finalized for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error handling invoice finalized:', error.message);
+    }
+  }
+};
+
+// Handle payment intent failed
+const handlePaymentIntentFailed = async (invoice) => {
+  if (invoice.subscription && stripe) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const userId = subscription.metadata?.userId;
+
+      if (userId) {
+        console.log(`❌ Payment intent failed for user ${userId}, subscription ${subscription.id}`);
+
+        // Update subscription status
+        await pool.execute(
+          `UPDATE subscriptions SET 
+           status = 'past_due',
+           updated_at = CURRENT_TIMESTAMP
+           WHERE subscription_id = ?`,
+          [subscription.id]
+        );
+
+        // Create payment history record
+        const [existingPayment] = await pool.execute(
+          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+          [invoice.id]
+        );
+
+        if (existingPayment.length === 0) {
+          try {
+            await pool.execute(
+              `INSERT INTO payment_history (
+                user_id,
+                stripe_session_id,
+                amount,
+                currency,
+                payment_status,
+                plan_type,
+                payment_method,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                invoice.id,
+                invoice.amount_due / 100,
+                invoice.currency,
+                'payment_intent_failed',
+                subscription.items.data[0]?.price.recurring?.interval || 'monthly',
+                'card'
+              ]
+            );
+            console.log(`✅ Payment history record created for payment intent failed: ${invoice.id}`);
+          } catch (insertError) {
+            if (insertError.code !== 'ER_DUP_ENTRY') {
+              console.error('Error creating payment history for payment intent failed:', insertError);
+            }
+          }
+        }
+
+        console.log(`❌ Payment intent failed for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error handling payment intent failed:', error.message);
+    }
+  }
+};
+
+// Handle payment intent succeeded
+const handlePaymentIntentSucceeded = async (invoice) => {
+  if (invoice.subscription && stripe) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const userId = subscription.metadata?.userId;
+
+      if (userId) {
+        console.log(`✅ Payment intent succeeded for user ${userId}, subscription ${subscription.id}`);
+
+        // Get subscription details for comprehensive update
+        const planType = subscription.items.data[0]?.price.recurring?.interval || 'monthly';
+        const subscriptionMinutes = subscription.items.data[0]?.price.metadata?.minutes || 3000;
+        const amount = subscription.items.data[0]?.price.unit_amount / 100; // Convert from cents
+
+        // 1. Update subscription record with comprehensive data
+        await pool.execute(
+          `UPDATE subscriptions SET 
+           status = 'active',
+           plan = ?,
+           type = ?,
+           subscription_minutes = ?,
+           used_minutes = 0,
+           amount = ?,
+           currency = ?,
+           billing_interval = ?,
+           current_period_start = ?,
+           current_period_end = ?,
+           updated_at = CURRENT_TIMESTAMP
+           WHERE subscription_id = ?`,
+          [
+            planType,
+            planType,
+            subscriptionMinutes,
+            amount,
+            subscription.currency,
+            planType,
+            new Date(subscription.current_period_start * 1000),
+            new Date(subscription.current_period_end * 1000),
+            subscription.id
+          ]
+        );
+
+        // 2. Update user subscription status and details
+        await pool.execute(
+          `UPDATE users SET 
+           is_subscribed = 1,
+           subscription_plan = ?,
+           subscription_status = 'active',
+           updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [planType, userId]
+        );
+
+        // 3. Create comprehensive payment history record
+        const [existingPayment] = await pool.execute(
+          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+          [invoice.id]
+        );
+
+        if (existingPayment.length === 0) {
+          try {
+            await pool.execute(
+              `INSERT INTO payment_history (
+                user_id,
+                stripe_session_id,
+                amount,
+                currency,
+                payment_status,
+                plan_type,
+                payment_method,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                invoice.id,
+                invoice.amount_paid / 100,
+                invoice.currency,
+                'payment_intent_succeeded',
+                planType,
+                'card'
+              ]
+            );
+            console.log(`✅ Payment history record created for payment intent succeeded: ${invoice.id}`);
+          } catch (insertError) {
+            if (insertError.code !== 'ER_DUP_ENTRY') {
+              console.error('Error creating payment history for payment intent succeeded:', insertError);
+            }
+          }
+        }
+
+        // 4. Log comprehensive success details
+        console.log(`✅ Payment intent succeeded for user ${userId}:`);
+        console.log(`   - Subscription: ${subscription.id}`);
+        console.log(`   - Plan: ${planType}`);
+        console.log(`   - Minutes: ${subscriptionMinutes}`);
+        console.log(`   - Amount: ${subscription.currency} ${amount}`);
+        console.log(`   - Period: ${new Date(subscription.current_period_start * 1000).toISOString()} to ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+        console.log(`   - Status: active`);
+        console.log(`   - Minutes reset to 0`);
+
+      } else {
+        console.warn(`⚠️ No userId found in subscription metadata for subscription ${subscription.id}`);
+      }
+    } catch (error) {
+      console.error('❌ Error handling payment intent succeeded:', error.message);
+    }
+  } else {
+    console.log('ℹ️ Invoice has no subscription or Stripe not configured');
+  }
+};
+
+// Handle customer updated
+const handleCustomerUpdated = async (customer) => {
+  try {
+    console.log(`👤 Customer updated: ${customer.id}`);
+    
+    // Find user by Stripe customer ID
+    const [users] = await pool.execute(
+      'SELECT id FROM users WHERE stripe_cust_id = ?',
+      [customer.id]
+    );
+
+    if (users.length > 0) {
+      const userId = users[0].id;
+      
+      // Update user information if needed
+      await pool.execute(
+        `UPDATE users SET 
+         email = ?,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [customer.email, userId]
+      );
+
+      console.log(`✅ Customer information updated for user ${userId}`);
+    }
+  } catch (error) {
+    console.error('❌ Error handling customer updated:', error.message);
+  }
+};
+
+// Handle customer deleted
+const handleCustomerDeleted = async (customer) => {
+  try {
+    console.log(`🗑️ Customer deleted: ${customer.id}`);
+    
+    // Find user by Stripe customer ID
+    const [users] = await pool.execute(
+      'SELECT id FROM users WHERE stripe_cust_id = ?',
+      [customer.id]
+    );
+
+    if (users.length > 0) {
+      const userId = users[0].id;
+      
+      // Update all subscriptions for this user to canceled
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'canceled',
+         updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ?`,
+        [userId]
+      );
+
+      // Set user as unsubscribed
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+
+      console.log(`✅ Customer deletion processed for user ${userId}`);
+    }
+  } catch (error) {
+    console.error('❌ Error handling customer deleted:', error.message);
+  }
+};
+
 // Handle subscription deleted
 const handleSubscriptionDeleted = async (subscription) => {
   const userId = subscription.metadata?.userId;
@@ -783,29 +1263,51 @@ const handlePaymentSucceeded = async (invoice) => {
       if (userId) {
         console.log(`💰 Processing successful payment for user ${userId}, subscription ${subscription.id}`);
 
-        // Update subscription status and reset minutes for new billing cycle
+        // Get subscription details for comprehensive update
+        const planType = subscription.items.data[0]?.price.recurring?.interval || 'monthly';
+        const subscriptionMinutes = subscription.items.data[0]?.price.metadata?.minutes || 3000;
+        const amount = subscription.items.data[0]?.price.unit_amount / 100; // Convert from cents
+
+        // 1. Update subscription record with comprehensive data
         await pool.execute(
           `UPDATE subscriptions SET 
            status = 'active',
+           plan = ?,
+           type = ?,
+           subscription_minutes = ?,
            used_minutes = 0,
+           amount = ?,
+           currency = ?,
+           billing_interval = ?,
            current_period_start = ?,
            current_period_end = ?,
            updated_at = CURRENT_TIMESTAMP
            WHERE subscription_id = ?`,
           [
+            planType,
+            planType,
+            subscriptionMinutes,
+            amount,
+            subscription.currency,
+            planType,
             new Date(subscription.current_period_start * 1000),
             new Date(subscription.current_period_end * 1000),
             subscription.id
           ]
         );
 
-        // Update user subscription status
+        // 2. Update user subscription status and details
         await pool.execute(
-          'UPDATE users SET is_subscribed = 1 WHERE id = ?',
-          [userId]
+          `UPDATE users SET 
+           is_subscribed = 1,
+           subscription_plan = ?,
+           subscription_status = 'active',
+           updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [planType, userId]
         );
 
-        // Create payment history record for successful payment
+        // 3. Create comprehensive payment history record
         const [existingPayment] = await pool.execute(
           'SELECT id FROM payment_history WHERE stripe_session_id = ?',
           [invoice.id]
@@ -830,7 +1332,7 @@ const handlePaymentSucceeded = async (invoice) => {
                 invoice.amount_paid / 100, // Convert from cents
                 invoice.currency,
                 'paid',
-                subscription.items.data[0]?.price.recurring?.interval || 'monthly',
+                planType,
                 'card'
               ]
             );
@@ -842,7 +1344,16 @@ const handlePaymentSucceeded = async (invoice) => {
           }
         }
 
-        console.log(`✅ Payment succeeded for user ${userId}, subscription activated and minutes reset`);
+        // 4. Log comprehensive success details
+        console.log(`✅ Payment succeeded for user ${userId}:`);
+        console.log(`   - Subscription: ${subscription.id}`);
+        console.log(`   - Plan: ${planType}`);
+        console.log(`   - Minutes: ${subscriptionMinutes}`);
+        console.log(`   - Amount: ${subscription.currency} ${amount}`);
+        console.log(`   - Period: ${new Date(subscription.current_period_start * 1000).toISOString()} to ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+        console.log(`   - Status: active`);
+        console.log(`   - Minutes reset to 0`);
+
       } else {
         console.warn(`⚠️ No userId found in subscription metadata for subscription ${subscription.id}`);
       }
@@ -955,17 +1466,30 @@ const testWebhook = async (req, res) => {
 const getWebhookInfo = async (req, res) => {
   try {
     const webhookEvents = [
+      // Checkout Events
       'checkout.session.completed',
       'checkout.session.expired',
+      
+      // Subscription Lifecycle Events
       'customer.subscription.created',
       'customer.subscription.updated',
       'customer.subscription.deleted',
       'customer.subscription.trial_will_end',
       'customer.subscription.paused',
       'customer.subscription.resumed',
+      
+      // Payment Events
       'invoice.payment_succeeded',
       'invoice.payment_failed',
-      'invoice.payment_action_required'
+      'invoice.payment_action_required',
+      'invoice.payment_requires_payment_method',
+      'invoice.finalized',
+      'invoice.payment_intent_payment_failed',
+      'invoice.payment_intent_succeeded',
+      
+      // Customer Events
+      'customer.updated',
+      'customer.deleted'
     ];
 
     res.json({
