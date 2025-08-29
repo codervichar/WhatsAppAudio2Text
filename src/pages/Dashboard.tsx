@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { FileText, CreditCard, Settings, ChevronDown, Search, MessageCircle, Upload, Zap, Star, Users, Clock, CheckCircle, TrendingUp, Shield, Globe } from 'lucide-react'
+import { FileText, CreditCard, Settings, ChevronDown, Search, MessageCircle, Upload, Zap, Star, Users, Clock, CheckCircle, TrendingUp, Shield, Globe, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
@@ -35,6 +35,8 @@ const Dashboard: React.FC = () => {
 
   // Notification state
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: '', type: '' });
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [canceling, setCanceling] = useState(false);
 
   // Show notification for 3 seconds
   useEffect(() => {
@@ -123,6 +125,29 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleCancelSubscription = async () => {
+    try {
+      setCanceling(true);
+      const response = await apiService.cancelSubscription();
+      
+      if (response.success) {
+        setShowCancelConfirm(false);
+        setNotification({ 
+          message: 'Your subscription has been scheduled for cancellation at the end of the current billing period. You will continue to have access to Pro features until then.', 
+          type: 'success' 
+        });
+        // Refresh profile data to update subscription status
+        await fetchProfile();
+      } else {
+        setNotification({ message: response.message || 'Failed to cancel subscription', type: 'error' });
+      }
+    } catch (err: any) {
+      setNotification({ message: err.message || 'Failed to cancel subscription. Please try again.', type: 'error' });
+    } finally {
+      setCanceling(false);
+    }
+  };
+
   const fetchProfile = async () => {
     try {
       setLoading(true);
@@ -177,11 +202,21 @@ const Dashboard: React.FC = () => {
   let planLabel = '';
   const subscriptionStatus = profile?.subscription?.status;
   const isCanceling = subscriptionStatus === 'canceling' || subscriptionStatus === 'canceled';
+  const currentPeriodEnd = profile?.subscription?.current_period_end;
   
   if (plan === 'pro' || plan === 'monthly') {
-    planLabel = isCanceling ? 'Monthly Paid (3000 min) - Canceling' : 'Monthly Paid (3000 min)';
+    if (isCanceling && currentPeriodEnd) {
+      const endDate = new Date(currentPeriodEnd).toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
+      planLabel = `Monthly Paid (3000 min) - Canceling on ${endDate}`;
+    } else {
+      planLabel = 'Monthly Paid (3000 min)';
+    }
   } else if (plan === 'free') {
-    planLabel = 'Free Plan (60 min)';
+    planLabel = `Free Plan (${subscriptionMinutes} min)`;
   } else {
     planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
   }
@@ -417,6 +452,20 @@ const Dashboard: React.FC = () => {
             <p className="text-gray-600 text-sm">Send audio messages through WhatsApp for transcription</p>
           </div>
           
+          {/* WhatsApp Number Display */}
+          <div className="text-center mb-6">
+            <p className="text-sm text-gray-600 mb-2">WhatsApp Number:</p>
+            <div className="text-3xl font-bold text-green-600 bg-green-50 px-4 py-2 rounded-lg border border-green-200 mb-3">
+              +1 (813) 896-3315
+            </div>
+            <div className="text-lg font-semibold text-gray-700">
+              OR
+            </div>
+            <div className="text-lg font-semibold text-gray-700 mt-1">
+              scan QR code
+            </div>
+          </div>
+          
           <div className="bg-gradient-to-br from-gray-50 to-white p-4 rounded-lg border border-gray-200 mb-4 shadow-md">
             <img src={waQr} alt="WhatsApp QR Code" className="w-40 h-40 rounded-lg shadow-md" />
           </div>
@@ -478,6 +527,18 @@ const Dashboard: React.FC = () => {
             <div className="text-center mb-6">
               <p className="text-gray-600 mb-2">Current Plan</p>
               <div className="text-lg font-bold text-purple-600">{planLabel}</div>
+              {isCanceling && currentPeriodEnd && (
+                <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-xs text-yellow-800">
+                    <strong>Note:</strong> Your subscription will remain active until {new Date(currentPeriodEnd).toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                </div>
+              )}
             </div>
             {plan === 'free' ? (
               <Link 
@@ -486,15 +547,34 @@ const Dashboard: React.FC = () => {
               >
                 Upgrade to Pro
               </Link>
-                         ) : (
-               <div className={`w-full text-white py-3 px-6 rounded-2xl text-center font-semibold ${
-                 isCanceling 
-                   ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' 
-                   : 'bg-gradient-to-r from-green-500 to-green-600'
-               }`}>
-                 {isCanceling ? 'Pro Plan - Canceling' : 'Pro Plan Active'}
-               </div>
-             )}
+            ) : (
+              <div className="w-full space-y-3">
+                <div className={`w-full text-white py-3 px-6 rounded-2xl text-center font-semibold ${
+                  isCanceling 
+                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' 
+                    : 'bg-gradient-to-r from-green-500 to-green-600'
+                }`}>
+                  {isCanceling ? 'Pro Plan - Canceling' : 'Pro Plan Active'}
+                </div>
+                <div className="flex gap-2">
+                  <Link 
+                    to="/subscription-management" 
+                    className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm"
+                  >
+                    Manage
+                  </Link>
+                  {!isCanceling && (
+                    <button
+                      onClick={() => setShowCancelConfirm(true)}
+                      className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-red-600 hover:to-red-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1"
+                    >
+                      <X className="w-3 h-3" />
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Account Settings Card */}
@@ -561,6 +641,38 @@ const Dashboard: React.FC = () => {
         </div>
         </div>
       </section>
+
+      {/* Cancel Subscription Confirmation Modal */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <X className="h-8 w-8 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-4">Cancel Subscription</h3>
+              <p className="text-gray-600 mb-6">
+                Are you sure you want to cancel your subscription? Your subscription will remain active until the end of the current billing period, and you'll continue to have access to all Pro features until then.
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={handleCancelSubscription}
+                  disabled={canceling}
+                  className="w-full px-4 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
+                >
+                  {canceling ? 'Processing...' : 'Yes, Cancel Subscription'}
+                </button>
+                <button
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
+                >
+                  Keep Subscription
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

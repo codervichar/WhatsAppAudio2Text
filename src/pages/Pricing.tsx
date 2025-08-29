@@ -178,10 +178,10 @@ const Pricing: React.FC = () => {
           name="Free Plan"
           price="Free"
           period=""
-          transcriptionTime="Up to 60 minutes of transcription per month"
+                        transcriptionTime="Up to 30 minutes of transcription per month"
           features={[
             "Basic transcription features",
-            "Limited to 60 minutes per month",
+                          "Limited to 30 minutes per month",
             "No credit card required",
             "Email support"
           ]}

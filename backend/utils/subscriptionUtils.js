@@ -20,7 +20,7 @@ const deductMinutesFromSubscription = async (userId, durationInSeconds) => {
     if (subscriptions.length === 0) {
       console.log('⚠️ No active subscription found for user, checking free plan limits');
       
-      // Check free plan limits (60 minutes)
+      // Check free plan limits (30 minutes)
       const [users] = await pool.execute(
         'SELECT total_minutes, used_minutes FROM users WHERE id = ?',
         [userId]
@@ -32,7 +32,7 @@ const deductMinutesFromSubscription = async (userId, durationInSeconds) => {
       }
       
       const user = users[0];
-      const totalMinutes = user.total_minutes || 60; // Default 60 minutes for free plan
+      const totalMinutes = user.total_minutes || 30; // Default 30 minutes for free plan
       const usedMinutes = user.used_minutes || 0;
       const durationInMinutes = durationInSeconds / 60;
       const newUsedMinutes = usedMinutes + durationInMinutes;
@@ -115,7 +115,7 @@ const checkUserMinutes = async (userId, durationInSeconds) => {
     if (subscriptions.length === 0) {
       console.log('⚠️ No active subscription found for user, checking free plan limits');
       
-      // Check free plan limits (60 minutes)
+      // Check free plan limits (30 minutes)
       const [users] = await pool.execute(
         'SELECT total_minutes, used_minutes FROM users WHERE id = ?',
         [userId]
@@ -127,7 +127,7 @@ const checkUserMinutes = async (userId, durationInSeconds) => {
       }
       
       const user = users[0];
-      const totalMinutes = user.total_minutes || 60; // Default 60 minutes for free plan
+      const totalMinutes = user.total_minutes || 30; // Default 30 minutes for free plan
       const usedMinutes = user.used_minutes || 0;
       const durationInMinutes = durationInSeconds / 60;
       const newUsedMinutes = usedMinutes + durationInMinutes;

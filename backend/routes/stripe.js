@@ -7,7 +7,9 @@ const {
   getSubscriptionDetails,
   getPaymentHistory,
   verifyPaymentSession,
-  cancelSubscription
+  cancelSubscription,
+  testWebhook,
+  getWebhookInfo
 } = require('../controllers/stripeController');
 
 const router = express.Router();
@@ -46,5 +48,15 @@ router.post('/verify-session', authenticateToken, verifyPaymentSession);
 // @desc    Cancel user subscription
 // @access  Private
 router.post('/cancel-subscription', authenticateToken, cancelSubscription);
+
+// @route   GET /api/stripe/webhook-test
+// @desc    Test webhook endpoint
+// @access  Public
+router.get('/webhook-test', testWebhook);
+
+// @route   GET /api/stripe/webhook-info
+// @desc    Get webhook configuration information
+// @access  Public
+router.get('/webhook-info', getWebhookInfo);
 
 module.exports = router; 

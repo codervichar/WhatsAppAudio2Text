@@ -66,15 +66,41 @@ const register = async (req, res) => {
     // Store refresh token
     await storeRefreshToken(userId, refreshToken);
 
-    // Create default subscription record
+    // Create free subscription record (30 minutes)
     await pool.execute(
-      'INSERT INTO subscriptions (user_id, plan, type, subscription_minutes, used_minutes, amount, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [userId, 'pro', 'monthly', process.env.PRO_MONTHLY_MINUTES, 0, process.env.PRO_MONTHLY_AMOUNT, 'active']
+      `INSERT INTO subscriptions (
+        user_id, 
+        plan, 
+        type, 
+        subscription_minutes, 
+        used_minutes, 
+        amount, 
+        currency,
+        billing_interval,
+        current_period_start,
+        current_period_end,
+        status,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [
+        userId, 
+        'free', 
+        'monthly', 
+        process.env.FREE_MONTHLY_MINUTES || 30, // Free plan minutes from env or default to 30
+        0, 
+        0.00, // Free plan has no cost
+        'USD',
+        'month',
+        new Date(), // Current period starts now
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        'active'
+      ]
     );
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: 'Free account created successfully',
       data: {
         user: {
           id: userId,
@@ -85,7 +111,9 @@ const register = async (req, res) => {
           phone_number,
           wtp_number,
           language: language || 'en',
-          is_premium: false
+          is_premium: false,
+          subscription_plan: 'free',
+          subscription_minutes: parseInt(process.env.FREE_MONTHLY_MINUTES) || 30
         },
         accessToken,
         refreshToken

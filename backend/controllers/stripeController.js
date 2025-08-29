@@ -208,6 +208,8 @@ const handleWebhook = async (req, res) => {
   }
 
   try {
+    console.log(`📨 Processing webhook event: ${event.type}`);
+    
     switch (event.type) {
       case 'checkout.session.completed':
         await handleCheckoutSessionCompleted(event.data.object);
@@ -224,14 +226,26 @@ const handleWebhook = async (req, res) => {
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object);
         break;
+      case 'customer.subscription.trial_will_end':
+        await handleSubscriptionTrialWillEnd(event.data.object);
+        break;
       case 'invoice.payment_succeeded':
         await handlePaymentSucceeded(event.data.object);
         break;
       case 'invoice.payment_failed':
         await handlePaymentFailed(event.data.object);
         break;
+      case 'invoice.payment_action_required':
+        await handlePaymentActionRequired(event.data.object);
+        break;
+      case 'customer.subscription.paused':
+        await handleSubscriptionPaused(event.data.object);
+        break;
+      case 'customer.subscription.resumed':
+        await handleSubscriptionResumed(event.data.object);
+        break;
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        console.log(`ℹ️ Unhandled event type: ${event.type}`);
     }
 
     res.json({ received: true });
@@ -525,29 +539,211 @@ const handleSubscriptionUpdated = async (subscription) => {
     return;
   }
 
-  // Update subscription record
+  console.log(`🔄 Processing subscription update for user ${userId}, status: ${subscription.status}`);
+
+  // Update subscription record with current period dates
   await pool.execute(
     `UPDATE subscriptions SET 
      status = ?,
+     current_period_start = ?,
+     current_period_end = ?,
      updated_at = CURRENT_TIMESTAMP
      WHERE subscription_id = ?`,
-    [subscription.status, subscription.id]
+    [
+      subscription.status, 
+      new Date(subscription.current_period_start * 1000),
+      new Date(subscription.current_period_end * 1000),
+      subscription.id
+    ]
   );
 
-  // Update user subscription status
-  if (subscription.status === 'active') {
-    await pool.execute(
-      'UPDATE users SET is_subscribed = true WHERE id = ?',
-      [userId]
-    );
-  } else if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
-    await pool.execute(
-      'UPDATE users SET is_subscribed = false WHERE id = ?',
-      [userId]
-    );
+  // Update user subscription status based on subscription status
+  switch (subscription.status) {
+    case 'active':
+    case 'trialing':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+        [userId]
+      );
+      console.log(`✅ User ${userId} subscription activated`);
+      break;
+      
+    case 'past_due':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+        [userId]
+      );
+      console.log(`⚠️ User ${userId} subscription is past due`);
+      break;
+      
+    case 'canceled':
+    case 'unpaid':
+    case 'incomplete_expired':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+        [userId]
+      );
+      console.log(`❌ User ${userId} subscription deactivated`);
+      break;
+      
+    case 'canceling':
+      await pool.execute(
+        'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+        [userId]
+      );
+      console.log(`🔄 User ${userId} subscription is being canceled`);
+      break;
+      
+    default:
+      console.log(`ℹ️ Unknown subscription status: ${subscription.status} for user ${userId}`);
   }
 
-  console.log(`Subscription updated for user ${userId}: ${subscription.status}`);
+  console.log(`✅ Subscription updated for user ${userId}: ${subscription.status}`);
+};
+
+// Handle subscription trial will end
+const handleSubscriptionTrialWillEnd = async (subscription) => {
+  const userId = subscription.metadata?.userId;
+
+  if (!userId) {
+    console.error('No userId in subscription metadata');
+    return;
+  }
+
+  console.log(`⚠️ Trial ending soon for user ${userId}, subscription ${subscription.id}`);
+  
+  // Update subscription status to indicate trial ending
+  await pool.execute(
+    `UPDATE subscriptions SET 
+     status = 'trialing',
+     updated_at = CURRENT_TIMESTAMP
+     WHERE subscription_id = ?`,
+    [subscription.id]
+  );
+
+  console.log(`✅ Trial ending notification processed for user ${userId}`);
+};
+
+// Handle payment action required
+const handlePaymentActionRequired = async (invoice) => {
+  if (invoice.subscription && stripe) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const userId = subscription.metadata?.userId;
+
+      if (userId) {
+        console.log(`⚠️ Payment action required for user ${userId}, subscription ${subscription.id}`);
+
+        // Update subscription status
+        await pool.execute(
+          `UPDATE subscriptions SET 
+           status = 'incomplete',
+           updated_at = CURRENT_TIMESTAMP
+           WHERE subscription_id = ?`,
+          [subscription.id]
+        );
+
+        // Create payment history record
+        const [existingPayment] = await pool.execute(
+          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+          [invoice.id]
+        );
+
+        if (existingPayment.length === 0) {
+          try {
+            await pool.execute(
+              `INSERT INTO payment_history (
+                user_id,
+                stripe_session_id,
+                amount,
+                currency,
+                payment_status,
+                plan_type,
+                payment_method,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                invoice.id,
+                invoice.amount_due / 100,
+                invoice.currency,
+                'requires_action',
+                subscription.items.data[0]?.price.recurring?.interval || 'monthly',
+                'card'
+              ]
+            );
+            console.log(`✅ Payment history record created for action required: ${invoice.id}`);
+          } catch (insertError) {
+            if (insertError.code !== 'ER_DUP_ENTRY') {
+              console.error('Error creating payment history for action required:', insertError);
+            }
+          }
+        }
+
+        console.log(`⚠️ Payment action required for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error handling payment action required:', error.message);
+    }
+  }
+};
+
+// Handle subscription paused
+const handleSubscriptionPaused = async (subscription) => {
+  const userId = subscription.metadata?.userId;
+
+  if (!userId) {
+    console.error('No userId in subscription metadata');
+    return;
+  }
+
+  console.log(`⏸️ Subscription paused for user ${userId}, subscription ${subscription.id}`);
+
+  // Update subscription status
+  await pool.execute(
+    `UPDATE subscriptions SET 
+     status = 'paused',
+     updated_at = CURRENT_TIMESTAMP
+     WHERE subscription_id = ?`,
+    [subscription.id]
+  );
+
+  // Keep user subscribed but mark as paused
+  await pool.execute(
+    'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+    [userId]
+  );
+
+  console.log(`✅ Subscription paused for user ${userId}`);
+};
+
+// Handle subscription resumed
+const handleSubscriptionResumed = async (subscription) => {
+  const userId = subscription.metadata?.userId;
+
+  if (!userId) {
+    console.error('No userId in subscription metadata');
+    return;
+  }
+
+  console.log(`▶️ Subscription resumed for user ${userId}, subscription ${subscription.id}`);
+
+  // Update subscription status
+  await pool.execute(
+    `UPDATE subscriptions SET 
+     status = 'active',
+     updated_at = CURRENT_TIMESTAMP
+     WHERE subscription_id = ?`,
+    [subscription.id]
+  );
+
+  // Ensure user is subscribed
+  await pool.execute(
+    'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+    [userId]
+  );
+
+  console.log(`✅ Subscription resumed for user ${userId}`);
 };
 
 // Handle subscription deleted
@@ -585,10 +781,28 @@ const handlePaymentSucceeded = async (invoice) => {
       const userId = subscription.metadata?.userId;
 
       if (userId) {
-        // Reset used minutes for new billing cycle
+        console.log(`💰 Processing successful payment for user ${userId}, subscription ${subscription.id}`);
+
+        // Update subscription status and reset minutes for new billing cycle
         await pool.execute(
-          'UPDATE subscriptions SET used_minutes = 0 WHERE subscription_id = ?',
-          [subscription.id]
+          `UPDATE subscriptions SET 
+           status = 'active',
+           used_minutes = 0,
+           current_period_start = ?,
+           current_period_end = ?,
+           updated_at = CURRENT_TIMESTAMP
+           WHERE subscription_id = ?`,
+          [
+            new Date(subscription.current_period_start * 1000),
+            new Date(subscription.current_period_end * 1000),
+            subscription.id
+          ]
+        );
+
+        // Update user subscription status
+        await pool.execute(
+          'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+          [userId]
         );
 
         // Create payment history record for successful payment
@@ -616,8 +830,8 @@ const handlePaymentSucceeded = async (invoice) => {
                 invoice.amount_paid / 100, // Convert from cents
                 invoice.currency,
                 'paid',
-                'monthly', // Default plan type
-                'card' // Default payment method
+                subscription.items.data[0]?.price.recurring?.interval || 'monthly',
+                'card'
               ]
             );
             console.log(`✅ Payment history record created for successful payment: ${invoice.id}`);
@@ -628,11 +842,15 @@ const handlePaymentSucceeded = async (invoice) => {
           }
         }
 
-        console.log(`Payment succeeded for user ${userId}, resetting minutes`);
+        console.log(`✅ Payment succeeded for user ${userId}, subscription activated and minutes reset`);
+      } else {
+        console.warn(`⚠️ No userId found in subscription metadata for subscription ${subscription.id}`);
       }
     } catch (error) {
-      console.error('Error handling payment succeeded:', error.message);
+      console.error('❌ Error handling payment succeeded:', error.message);
     }
+  } else {
+    console.log('ℹ️ Invoice has no subscription or Stripe not configured');
   }
 };
 
@@ -644,13 +862,21 @@ const handlePaymentFailed = async (invoice) => {
       const userId = subscription.metadata?.userId;
 
       if (userId) {
-        // Update subscription status
+        console.log(`❌ Processing failed payment for user ${userId}, subscription ${subscription.id}`);
+
+        // Update subscription status to past_due
         await pool.execute(
           `UPDATE subscriptions SET 
            status = 'past_due',
            updated_at = CURRENT_TIMESTAMP
            WHERE subscription_id = ?`,
           [subscription.id]
+        );
+
+        // Update user subscription status (keep subscribed but mark as past due)
+        await pool.execute(
+          'UPDATE users SET is_subscribed = 1 WHERE id = ?',
+          [userId]
         );
 
         // Create payment history record for failed payment
@@ -678,8 +904,8 @@ const handlePaymentFailed = async (invoice) => {
                 invoice.amount_due / 100, // Convert from cents
                 invoice.currency,
                 'failed',
-                'monthly', // Default plan type
-                'card' // Default payment method
+                subscription.items.data[0]?.price.recurring?.interval || 'monthly',
+                'card'
               ]
             );
             console.log(`✅ Payment history record created for failed payment: ${invoice.id}`);
@@ -690,11 +916,74 @@ const handlePaymentFailed = async (invoice) => {
           }
         }
 
-        console.log(`Payment failed for user ${userId}`);
+        console.log(`❌ Payment failed for user ${userId}, subscription marked as past_due`);
+      } else {
+        console.warn(`⚠️ No userId found in subscription metadata for subscription ${subscription.id}`);
       }
     } catch (error) {
-      console.error('Error handling payment failed:', error.message);
+      console.error('❌ Error handling payment failed:', error.message);
     }
+  } else {
+    console.log('ℹ️ Invoice has no subscription or Stripe not configured');
+  }
+};
+
+// @desc    Test webhook endpoint
+// @route   GET /api/stripe/webhook-test
+// @access  Public
+const testWebhook = async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      message: 'Webhook endpoint is working',
+      timestamp: new Date().toISOString(),
+      stripeConfigured: !!stripe,
+      webhookSecretConfigured: !!process.env.STRIPE_WEBHOOK_SECRET
+    });
+  } catch (error) {
+    console.error('Webhook test error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Webhook test failed'
+    });
+  }
+};
+
+// @desc    Get webhook configuration info
+// @route   GET /api/stripe/webhook-info
+// @access  Public
+const getWebhookInfo = async (req, res) => {
+  try {
+    const webhookEvents = [
+      'checkout.session.completed',
+      'checkout.session.expired',
+      'customer.subscription.created',
+      'customer.subscription.updated',
+      'customer.subscription.deleted',
+      'customer.subscription.trial_will_end',
+      'customer.subscription.paused',
+      'customer.subscription.resumed',
+      'invoice.payment_succeeded',
+      'invoice.payment_failed',
+      'invoice.payment_action_required'
+    ];
+
+    res.json({
+      success: true,
+      data: {
+        webhookUrl: `${process.env.APP_URL || 'http://localhost:5000'}/api/stripe/webhook`,
+        events: webhookEvents,
+        stripeConfigured: !!stripe,
+        webhookSecretConfigured: !!process.env.STRIPE_WEBHOOK_SECRET,
+        environment: process.env.NODE_ENV || 'development'
+      }
+    });
+  } catch (error) {
+    console.error('Webhook info error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get webhook info'
+    });
   }
 };
 
@@ -768,22 +1057,14 @@ const getSubscriptionStatus = async (req, res) => {
 // @route   POST /api/stripe/cancel-subscription
 // @access  Private
 const cancelSubscription = async (req, res) => {
-  // Check if Stripe is initialized
-  if (!stripe) {
-    return res.status(503).json({
-      success: false,
-      message: 'Stripe service is not configured. Please set STRIPE_SECRET environment variable.'
-    });
-  }
-  
   try {
     const userId = req.user.id;
 
-         // Get user's active subscription
-     const [subscriptions] = await pool.execute(
-       'SELECT subscription_id FROM subscriptions WHERE user_id = ? AND status = "active"',
-       [userId]
-     );
+    // Get user's active subscription
+    const [subscriptions] = await pool.execute(
+      'SELECT subscription_id, status FROM subscriptions WHERE user_id = ? AND status IN ("active", "trialing")',
+      [userId]
+    );
 
     if (subscriptions.length === 0) {
       return res.status(404).json({
@@ -792,21 +1073,60 @@ const cancelSubscription = async (req, res) => {
       });
     }
 
-         const subscriptionId = subscriptions[0].subscription_id;
+    const subscription = subscriptions[0];
+    const subscriptionId = subscription.subscription_id;
+
+    // Check if Stripe is initialized
+    if (!stripe) {
+      console.warn('⚠️ Stripe not configured, updating local database only');
+      
+      // Update local database - set status to 'canceling' to indicate scheduled cancellation
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'canceling',
+         updated_at = CURRENT_TIMESTAMP
+         WHERE subscription_id = ?`,
+        [subscriptionId]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Subscription will be canceled at the end of the current billing period (local update only)'
+      });
+    }
 
     // Cancel subscription in Stripe
-    await stripe.subscriptions.update(subscriptionId, {
-      cancel_at_period_end: true
-    });
+    try {
+      await stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: true
+      });
+      console.log(`✅ Stripe subscription ${subscriptionId} canceled successfully`);
+    } catch (stripeError) {
+      console.error('❌ Stripe cancellation failed:', stripeError.message);
+      
+      // If Stripe fails, still update local database
+      await pool.execute(
+        `UPDATE subscriptions SET 
+         status = 'canceling',
+         updated_at = CURRENT_TIMESTAMP
+         WHERE subscription_id = ?`,
+        [subscriptionId]
+      );
 
-         // Update local database - set status to 'canceling' to indicate scheduled cancellation
-     await pool.execute(
-       `UPDATE subscriptions SET 
-        status = 'canceling',
-        updated_at = CURRENT_TIMESTAMP
-        WHERE subscription_id = ?`,
-       [subscriptionId]
-     );
+      return res.json({
+        success: true,
+        message: 'Subscription will be canceled at the end of the current billing period (local update only - Stripe update failed)'
+      });
+    }
+
+    // Update local database - set status to 'canceling' to indicate scheduled cancellation
+    await pool.execute(
+      `UPDATE subscriptions SET 
+       status = 'canceling',
+       updated_at = CURRENT_TIMESTAMP
+       WHERE subscription_id = ?`,
+      [subscriptionId]
+    );
 
     res.json({
       success: true,
@@ -817,7 +1137,7 @@ const cancelSubscription = async (req, res) => {
     console.error('Cancel subscription error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to cancel subscription'
+      message: 'Failed to cancel subscription: ' + error.message
     });
   }
 };
@@ -1230,5 +1550,7 @@ module.exports = {
   getSubscriptionDetails,
   getPaymentHistory,
   verifyPaymentSession,
-  cancelSubscription
+  cancelSubscription,
+  testWebhook,
+  getWebhookInfo
 }; 
