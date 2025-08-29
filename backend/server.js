@@ -46,9 +46,26 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body parsing middleware - but exclude webhook routes for raw body
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/stripe/webhook') {
+    // Skip body parsing for Stripe webhooks
+    next();
+  } else {
+    // Use JSON parsing for all other routes
+    express.json({ limit: '10mb' })(req, res, next);
+  }
+});
+
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/stripe/webhook') {
+    // Skip URL encoding for Stripe webhooks
+    next();
+  } else {
+    // Use URL encoding for all other routes
+    express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
+  }
+});
 
 // Compression middleware
 app.use(compression());

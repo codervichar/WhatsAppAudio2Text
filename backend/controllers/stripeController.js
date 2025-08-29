@@ -224,11 +224,33 @@ const createCheckoutSession = async (req, res) => {
 // @route   POST /api/stripe/webhook
 // @access  Public
 const handleWebhook = async (req, res) => {
+  console.log('📨 Webhook received:', {
+    method: req.method,
+    url: req.originalUrl,
+    headers: {
+      'stripe-signature': req.headers['stripe-signature'] ? 'Present' : 'Missing',
+      'content-type': req.headers['content-type'],
+      'user-agent': req.headers['user-agent']
+    },
+    bodyLength: req.body ? req.body.length : 'No body',
+    webhookSecretConfigured: !!process.env.STRIPE_WEBHOOK_SECRET
+  });
+
   // Check if Stripe is initialized
   if (!stripe) {
+    console.error('❌ Stripe not initialized');
     return res.status(503).json({
       success: false,
       message: 'Stripe service is not configured. Please set STRIPE_SECRET environment variable.'
+    });
+  }
+
+  // Check if webhook secret is configured
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    console.error('❌ STRIPE_WEBHOOK_SECRET not configured');
+    return res.status(500).json({
+      success: false,
+      message: 'Webhook secret not configured'
     });
   }
   
@@ -241,13 +263,27 @@ const handleWebhook = async (req, res) => {
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
+    console.log('✅ Webhook signature verified successfully');
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    console.error('❌ Webhook signature verification failed:', err.message);
+    console.error('❌ Webhook error details:', {
+      error: err.message,
+      signature: sig ? 'Present' : 'Missing',
+      bodyLength: req.body ? req.body.length : 'No body',
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET ? 'Configured' : 'Missing'
+    });
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   try {
     console.log(`📨 Processing webhook event: ${event.type}`);
+    console.log(`📨 Event ID: ${event.id}`);
+    console.log(`📨 Event object:`, {
+      id: event.data.object.id,
+      type: event.data.object.object,
+      status: event.data.object.status,
+      created: event.data.object.created
+    });
     
     switch (event.type) {
       // Checkout Events
@@ -267,6 +303,9 @@ const handleWebhook = async (req, res) => {
         break;
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object);
+        break;
+      case 'customer.subscription.canceled':
+        await handleSubscriptionCanceled(event.data.object);
         break;
       case 'customer.subscription.trial_will_end':
         await handleSubscriptionTrialWillEnd(event.data.object);
@@ -1401,6 +1440,66 @@ const handleSubscriptionDeleted = async (subscription) => {
   console.log(`✅ Subscription deleted for user ${userId} - moved to free plan`);
 };
 
+// Handle subscription canceled
+const handleSubscriptionCanceled = async (subscription) => {
+  const userId = subscription.metadata?.userId;
+
+  if (!userId) {
+    console.error('No userId in subscription metadata');
+    return;
+  }
+
+  console.log(`❌ Processing subscription cancellation for user ${userId}, subscription ${subscription.id}`);
+
+  // Update subscription record to canceled status
+  await pool.execute(
+    `UPDATE subscriptions SET 
+     status = 'canceled',
+     cancel_date = CURRENT_TIMESTAMP,
+     updated_at = CURRENT_TIMESTAMP
+     WHERE subscription_id = ?`,
+    [subscription.id]
+  );
+
+  // Update user subscription status to free
+  await pool.execute(
+    'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+    [userId]
+  );
+
+  // Create payment history record for subscription cancellation
+  try {
+    await pool.execute(
+      `INSERT INTO payment_history (
+        user_id,
+        stripe_session_id,
+        amount,
+        currency,
+        payment_status,
+        plan_type,
+        payment_method,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [
+        userId,
+        `canceled_${subscription.id}_${Date.now()}`,
+        0,
+        'usd',
+        'subscription_canceled',
+        'free',
+        'webhook'
+      ]
+    );
+    console.log(`✅ Payment history record created for subscription cancellation`);
+  } catch (insertError) {
+    if (insertError.code !== 'ER_DUP_ENTRY') {
+      console.error('Error creating payment history for subscription cancellation:', insertError);
+    }
+  }
+
+  console.log(`✅ Subscription canceled for user ${userId} - moved to free plan`);
+};
+
 // Handle payment succeeded
 const handlePaymentSucceeded = async (invoice) => {
   if (invoice.subscription && stripe) {
@@ -1620,6 +1719,7 @@ const getWebhookInfo = async (req, res) => {
       'customer.subscription.created',
       'customer.subscription.updated',
       'customer.subscription.deleted',
+      'customer.subscription.canceled',
       'customer.subscription.trial_will_end',
       'customer.subscription.paused',
       'customer.subscription.resumed',
