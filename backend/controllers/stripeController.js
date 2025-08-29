@@ -265,9 +265,6 @@ const handleWebhook = async (req, res) => {
         break;
       
       // Customer Events
-      case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(event.data.object);
-        break;
       case 'customer.updated':
         await handleCustomerUpdated(event.data.object);
         break;
