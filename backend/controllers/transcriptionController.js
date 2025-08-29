@@ -69,25 +69,29 @@ const getTranscriptionHistory = async (req, res) => {
     // Add pagination
     params.push(limit, offset);
 
-    const query = `
-      SELECT 
-        id,
-        original_filename as fileName,
-        file_size as fileSize,
-        transcription_text as text,
-        duration as audioLength,
-        status,
-        language,
-        confidence_score,
-        word_count,
-        request_id,
-        created_at as createdAt,
-        updated_at as updatedAt
-      FROM transcriptions 
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY created_at DESC 
-      LIMIT ? OFFSET ?
-    `;
+    // Debug: Log the conditions and parameters
+    console.log('🔍 Conditions:', conditions);
+    console.log('🔍 Parameters before pagination:', params.slice(0, -2));
+    console.log('🔍 Pagination params:', params.slice(-2));
+
+    // Use a simpler query structure to avoid template literal issues
+    const query = 'SELECT ' +
+      'id, ' +
+      'original_filename as fileName, ' +
+      'file_size as fileSize, ' +
+      'transcription_text as text, ' +
+      'duration as audioLength, ' +
+      'status, ' +
+      'language, ' +
+      'confidence_score, ' +
+      'COALESCE(word_count, 0) as word_count, ' +
+      'request_id, ' +
+      'created_at as createdAt, ' +
+      'updated_at as updatedAt ' +
+      'FROM transcriptions ' +
+      'WHERE ' + conditions.join(' AND ') + ' ' +
+      'ORDER BY created_at DESC ' +
+      'LIMIT ? OFFSET ?';
 
     // Debug logging
     console.log('🔍 Transcription query:', query);
@@ -100,6 +104,18 @@ const getTranscriptionHistory = async (req, res) => {
       console.error('❌ Database query error:', dbError);
       console.error('❌ Query:', query);
       console.error('❌ Parameters:', params);
+      console.error('❌ Error code:', dbError.code);
+      console.error('❌ Error number:', dbError.errno);
+      console.error('❌ SQL state:', dbError.sqlState);
+      console.error('❌ SQL message:', dbError.sqlMessage);
+      
+      // Check for specific error types
+      if (dbError.code === 'ER_WRONG_ARGUMENTS') {
+        console.error('❌ Parameter count mismatch detected');
+        console.error('❌ Expected parameters:', params.length);
+        console.error('❌ Query placeholders:', (query.match(/\?/g) || []).length);
+      }
+      
       throw new Error(`Database query failed: ${dbError.message}`);
     }
 
@@ -117,7 +133,7 @@ const getTranscriptionHistory = async (req, res) => {
       countParams.push(`%${search.trim()}%`, `%${search.trim()}%`);
     }
 
-    const countQuery = `SELECT COUNT(*) as total FROM transcriptions WHERE ${countConditions.join(' AND ')}`;
+    const countQuery = 'SELECT COUNT(*) as total FROM transcriptions WHERE ' + countConditions.join(' AND ');
 
     // Debug logging for count query
     console.log('🔍 Count query:', countQuery);
