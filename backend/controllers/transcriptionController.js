@@ -33,13 +33,43 @@ const initializeS3 = () => {
 const getTranscriptionHistory = async (req, res) => {
   try {
     const userId = req.user.id;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    
+    // Validate and sanitize input parameters
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10)); // Limit max 100 items
     const offset = (page - 1) * limit;
-    const status = req.query.status;
-    const search = req.query.search;
+    const status = req.query.status ? String(req.query.status).trim() : null;
+    const search = req.query.search ? String(req.query.search).trim() : null;
 
-    let query = `
+    console.log('🔍 Transcription history request:', {
+      userId,
+      page,
+      limit,
+      offset,
+      status,
+      search: search ? `${search.substring(0, 20)}...` : null
+    });
+
+    // Build query dynamically to avoid parameter mismatch
+    const conditions = ['user_id = ?'];
+    const params = [userId];
+
+    // Add status filter
+    if (status && status !== 'all') {
+      conditions.push('status = ?');
+      params.push(status);
+    }
+
+    // Add search filter
+    if (search && search.trim()) {
+      conditions.push('(original_filename LIKE ? OR transcription_text LIKE ?)');
+      params.push(`%${search.trim()}%`, `%${search.trim()}%`);
+    }
+
+    // Add pagination
+    params.push(limit, offset);
+
+    const query = `
       SELECT 
         id,
         original_filename as fileName,
@@ -54,46 +84,44 @@ const getTranscriptionHistory = async (req, res) => {
         created_at as createdAt,
         updated_at as updatedAt
       FROM transcriptions 
-      WHERE user_id = ?
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY created_at DESC 
+      LIMIT ? OFFSET ?
     `;
-    let queryParams = [userId];
 
-    // Add status filter
-    if (status && status !== 'all') {
-      query += ' AND status = ?';
-      queryParams.push(status);
-    }
-
-    // Add search filter
-    if (search) {
-      query += ' AND (original_filename LIKE ? OR transcription_text LIKE ?)';
-      queryParams.push(`%${search}%`, `%${search}%`);
-    }
-
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    queryParams.push(limit, offset);
+    // Debug logging
+    console.log('🔍 Transcription query:', query);
+    console.log('🔍 Query parameters:', params);
 
     let transcriptions;
     try {
-      [transcriptions] = await pool.execute(query, queryParams);
+      [transcriptions] = await pool.execute(query, params);
     } catch (dbError) {
-      console.error('Database query error:', dbError);
+      console.error('❌ Database query error:', dbError);
+      console.error('❌ Query:', query);
+      console.error('❌ Parameters:', params);
       throw new Error(`Database query failed: ${dbError.message}`);
     }
 
     // Get total count for pagination
-    let countQuery = 'SELECT COUNT(*) as total FROM transcriptions WHERE user_id = ?';
-    let countParams = [userId];
+    const countConditions = ['user_id = ?'];
+    const countParams = [userId];
     
     if (status && status !== 'all') {
-      countQuery += ' AND status = ?';
+      countConditions.push('status = ?');
       countParams.push(status);
     }
 
-    if (search) {
-      countQuery += ' AND (original_filename LIKE ? OR transcription_text LIKE ?)';
-      countParams.push(`%${search}%`, `%${search}%`);
+    if (search && search.trim()) {
+      countConditions.push('(original_filename LIKE ? OR transcription_text LIKE ?)');
+      countParams.push(`%${search.trim()}%`, `%${search.trim()}%`);
     }
+
+    const countQuery = `SELECT COUNT(*) as total FROM transcriptions WHERE ${countConditions.join(' AND ')}`;
+
+    // Debug logging for count query
+    console.log('🔍 Count query:', countQuery);
+    console.log('🔍 Count parameters:', countParams);
 
     let countResult;
     let total;
@@ -101,7 +129,9 @@ const getTranscriptionHistory = async (req, res) => {
       [countResult] = await pool.execute(countQuery, countParams);
       total = countResult[0].total;
     } catch (dbError) {
-      console.error('Database count query error:', dbError);
+      console.error('❌ Database count query error:', dbError);
+      console.error('❌ Count query:', countQuery);
+      console.error('❌ Count parameters:', countParams);
       throw new Error(`Database count query failed: ${dbError.message}`);
     }
 
@@ -119,7 +149,7 @@ const getTranscriptionHistory = async (req, res) => {
         [userId]
       );
     } catch (dbError) {
-      console.error('Database stats query error:', dbError);
+      console.error('❌ Database stats query error:', dbError);
       throw new Error(`Database stats query failed: ${dbError.message}`);
     }
 
@@ -198,19 +228,34 @@ const getTranscriptionHistory = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get transcription history error:', error);
+    console.error('❌ Get transcription history error:', error);
     
     // Log more details for debugging
-    console.error('Error details:', {
+    console.error('❌ Error details:', {
       message: error.message,
       stack: error.stack,
       code: error.code,
       sqlMessage: error.sqlMessage
     });
     
-    res.status(500).json({
+    // Provide more specific error messages
+    let errorMessage = 'Failed to get transcription history';
+    let statusCode = 500;
+    
+    if (error.message.includes('Database query failed')) {
+      errorMessage = 'Database error occurred while fetching transcriptions';
+      statusCode = 500;
+    } else if (error.message.includes('ER_WRONG_ARGUMENTS')) {
+      errorMessage = 'Invalid query parameters provided';
+      statusCode = 400;
+    } else if (error.message.includes('ER_NO_SUCH_TABLE')) {
+      errorMessage = 'Transcriptions table not found';
+      statusCode = 500;
+    }
+    
+    res.status(statusCode).json({
       success: false,
-      message: 'Internal server error',
+      message: errorMessage,
       ...(process.env.NODE_ENV === 'development' && { 
         details: error.message,
         code: error.code 
