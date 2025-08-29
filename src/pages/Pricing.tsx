@@ -121,24 +121,29 @@ const Pricing: React.FC = () => {
   });
 
   const handleSubscribe = async (priceId: string, planType: string) => {
-    console.log('handleSubscribe called with:', { priceId, planType });
+    console.log('🔧 handleSubscribe called with:', { priceId, planType });
     
     setIsLoading(true);
     try {
+      console.log('🔧 Creating checkout session...');
       const response = await apiService.createCheckoutSession({
         priceId,
         planType
       });
 
+      console.log('🔧 Checkout session response:', response);
+
       if (response.success && response.data?.url) {
+        console.log('🔧 Redirecting to Stripe checkout:', response.data.url);
         // Redirect to Stripe checkout
         window.location.href = response.data.url;
       } else {
-        alert('Failed to create checkout session. Please try again.');
+        console.error('❌ Failed to create checkout session:', response);
+        alert(`Failed to create checkout session: ${response.message || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Checkout error:', error);
-      alert('An error occurred. Please try again.');
+      console.error('❌ Checkout error:', error);
+      alert(`An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }

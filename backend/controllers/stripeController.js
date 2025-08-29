@@ -10,6 +10,14 @@ try {
   } else {
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     console.log('✅ Stripe initialized successfully');
+    
+    // Log configuration for debugging
+    console.log('🔧 Stripe Configuration:', {
+      hasSecretKey: !!process.env.STRIPE_SECRET_KEY,
+      hasWebhookSecret: !!process.env.STRIPE_WEBHOOK_SECRET,
+      frontendUrl: process.env.FRONTEND_URL || process.env.APP_URL || 'Not set',
+      appUrl: process.env.APP_URL || 'Not set'
+    });
   }
 } catch (error) {
   console.error('❌ Failed to initialize Stripe:', error.message);
@@ -22,13 +30,29 @@ try {
 const createCheckoutSession = async (req, res) => {
   const { priceId, planType, email } = req.body;
 
+  console.log('🔧 createCheckoutSession called with:', {
+    priceId,
+    planType,
+    email,
+    userId: req.user?.id,
+    userEmail: req.user?.email
+  });
+
   // Check if Stripe is initialized
   if (!stripe) {
+    console.error('❌ Stripe not initialized');
     return res.status(503).json({
       success: false,
       message: 'Stripe service is not configured. Please set STRIPE_SECRET environment variable.'
     });
   }
+
+  // Log environment variables for debugging
+  console.log('🔧 Environment variables:', {
+    FRONTEND_URL: process.env.FRONTEND_URL,
+    APP_URL: process.env.APP_URL,
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ? 'Set' : 'Not set'
+  });
   
   try {
     // Handle both authenticated and unauthenticated users
@@ -80,8 +104,8 @@ const createCheckoutSession = async (req, res) => {
         },
       ],
       mode: 'subscription',
-      success_url: `${process.env.APP_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.APP_URL}/subscription/cancel`,
+      success_url: `${process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173'}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173'}/subscription/cancel`,
       metadata: {
         userId: userId ? userId.toString() : 'guest',
         planType: planType || 'monthly'
@@ -94,12 +118,27 @@ const createCheckoutSession = async (req, res) => {
       }
     };
 
+    console.log('🔧 Creating checkout session with config:', {
+      priceId,
+      planType,
+      userId,
+      success_url: sessionConfig.success_url,
+      cancel_url: sessionConfig.cancel_url
+    });
+
     // Only add customer_email if it's provided
     if (user.email) {
       sessionConfig.customer_email = user.email;
     }
 
     const session = await stripe.checkout.sessions.create(sessionConfig);
+
+    console.log('✅ Checkout session created successfully:', {
+      sessionId: session.id,
+      url: session.url,
+      success_url: sessionConfig.success_url,
+      cancel_url: sessionConfig.cancel_url
+    });
 
     res.json({
       success: true,
@@ -173,6 +212,9 @@ const handleWebhook = async (req, res) => {
       case 'checkout.session.completed':
         await handleCheckoutSessionCompleted(event.data.object);
         break;
+      case 'checkout.session.expired':
+        await handleCheckoutSessionExpired(event.data.object);
+        break;
       case 'customer.subscription.created':
         await handleSubscriptionCreated(event.data.object);
         break;
@@ -212,7 +254,7 @@ const handleCheckoutSessionCompleted = async (session) => {
   try {
     // Get user details
     const [users] = await pool.execute(
-      'SELECT email, first_name, last_name FROM users WHERE id = ?',
+      'SELECT email, first_name, last_name, stripe_cust_id FROM users WHERE id = ?',
       [userId]
     );
 
@@ -223,13 +265,12 @@ const handleCheckoutSessionCompleted = async (session) => {
 
     const user = users[0];
 
-    // Check if payment record already exists
+    // Always create payment history record (for both successful and failed payments)
     const [existingPayment] = await pool.execute(
       'SELECT id FROM payment_history WHERE stripe_session_id = ?',
       [session.id]
     );
 
-    // Only insert payment details if record doesn't exist
     if (existingPayment.length === 0) {
       try {
         await pool.execute(
@@ -253,35 +294,128 @@ const handleCheckoutSessionCompleted = async (session) => {
             session.payment_method_types?.[0] || 'card'
           ]
         );
-        console.log(`✅ Payment record created for session ${session.id}`);
+        console.log(`✅ Payment history record created for session ${session.id} with status: ${session.payment_status}`);
       } catch (insertError) {
-        // Handle race condition where another process might have inserted the record
         if (insertError.code === 'ER_DUP_ENTRY') {
-          console.log(`ℹ️ Payment record already exists for session ${session.id} (race condition)`);
+          console.log(`ℹ️ Payment history record already exists for session ${session.id} (race condition)`);
         } else {
-          throw insertError;
+          console.error('Error creating payment history record:', insertError);
         }
       }
     } else {
-      console.log(`ℹ️ Payment record already exists for session ${session.id}`);
+      console.log(`ℹ️ Payment history record already exists for session ${session.id}`);
     }
 
-    // Update user subscription status and add Stripe customer ID
-    await pool.execute(
-      `UPDATE users SET 
-       is_subscribed = true,
-       stripe_cust_id = ?,
-       updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [session.customer, userId]
-    );
+    // Only update user subscription status if payment was successful
+    if (session.payment_status === 'paid') {
+      // Update user subscription status and add Stripe customer ID (only if not already set)
+      const currentStripeCustId = user.stripe_cust_id;
+      const stripeCustId = currentStripeCustId || session.customer;
+      
+      await pool.execute(
+        `UPDATE users SET 
+         is_subscribed = 1,
+         stripe_cust_id = ?,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [stripeCustId, userId]
+      );
 
-    console.log(`✅ User ${userId} completed checkout for ${planType} plan`);
-    console.log(`💰 Payment amount: ${session.currency} ${session.amount_total / 100}`);
-    console.log(`👤 Customer ID: ${session.customer}`);
+      console.log(`✅ User ${userId} subscription status updated. Stripe Customer ID: ${stripeCustId}`);
+      console.log(`💰 Payment amount: ${session.currency} ${session.amount_total / 100}`);
+    } else {
+      console.log(`⚠️ Payment not completed for user ${userId}. Status: ${session.payment_status}`);
+    }
 
   } catch (error) {
     console.error('Error handling checkout session completed:', error);
+  }
+};
+
+// Handle checkout session expired
+const handleCheckoutSessionExpired = async (session) => {
+  const userId = session.metadata?.userId;
+
+  if (!userId) {
+    console.error('No userId in session metadata for expired session');
+    return;
+  }
+
+  try {
+    // Get user details
+    const [users] = await pool.execute(
+      'SELECT email, first_name, last_name, stripe_cust_id FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      console.error(`User ${userId} not found for expired session`);
+      return;
+    }
+
+    const user = users[0];
+
+    // Create payment history record for expired session
+    const [existingPayment] = await pool.execute(
+      'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+      [session.id]
+    );
+
+    if (existingPayment.length === 0) {
+      try {
+        await pool.execute(
+          `INSERT INTO payment_history (
+            user_id,
+            stripe_session_id,
+            amount,
+            currency,
+            payment_status,
+            plan_type,
+            payment_method,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            session.id,
+            session.amount_total / 100, // Convert from cents
+            session.currency,
+            'expired',
+            session.metadata?.planType || 'monthly',
+            session.payment_method_types?.[0] || 'card'
+          ]
+        );
+        console.log(`✅ Payment history record created for expired session ${session.id}`);
+      } catch (insertError) {
+        if (insertError.code === 'ER_DUP_ENTRY') {
+          console.log(`ℹ️ Payment history record already exists for expired session ${session.id} (race condition)`);
+        } else {
+          console.error('Error creating payment history record for expired session:', insertError);
+        }
+      }
+    } else {
+      console.log(`ℹ️ Payment history record already exists for expired session ${session.id}`);
+    }
+
+    // Update user subscription status if it was a paid session
+    if (session.payment_status === 'paid') {
+      const currentStripeCustId = user.stripe_cust_id;
+      const stripeCustId = currentStripeCustId || session.customer;
+      
+      await pool.execute(
+        `UPDATE users SET 
+         is_subscribed = 1,
+         stripe_cust_id = ?,
+         updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [stripeCustId, userId]
+      );
+      console.log(`✅ User ${userId} subscription status updated for expired session. Stripe Customer ID: ${stripeCustId}`);
+    } else {
+      console.log(`⚠️ Payment not completed for user ${userId} for expired session. Status: ${session.payment_status}`);
+    }
+
+  } catch (error) {
+    console.error('Error handling checkout session expired:', error);
   }
 };
 
@@ -457,6 +591,43 @@ const handlePaymentSucceeded = async (invoice) => {
           [subscription.id]
         );
 
+        // Create payment history record for successful payment
+        const [existingPayment] = await pool.execute(
+          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+          [invoice.id]
+        );
+
+        if (existingPayment.length === 0) {
+          try {
+            await pool.execute(
+              `INSERT INTO payment_history (
+                user_id,
+                stripe_session_id,
+                amount,
+                currency,
+                payment_status,
+                plan_type,
+                payment_method,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                invoice.id,
+                invoice.amount_paid / 100, // Convert from cents
+                invoice.currency,
+                'paid',
+                'monthly', // Default plan type
+                'card' // Default payment method
+              ]
+            );
+            console.log(`✅ Payment history record created for successful payment: ${invoice.id}`);
+          } catch (insertError) {
+            if (insertError.code !== 'ER_DUP_ENTRY') {
+              console.error('Error creating payment history for successful payment:', insertError);
+            }
+          }
+        }
+
         console.log(`Payment succeeded for user ${userId}, resetting minutes`);
       }
     } catch (error) {
@@ -481,6 +652,43 @@ const handlePaymentFailed = async (invoice) => {
            WHERE subscription_id = ?`,
           [subscription.id]
         );
+
+        // Create payment history record for failed payment
+        const [existingPayment] = await pool.execute(
+          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+          [invoice.id]
+        );
+
+        if (existingPayment.length === 0) {
+          try {
+            await pool.execute(
+              `INSERT INTO payment_history (
+                user_id,
+                stripe_session_id,
+                amount,
+                currency,
+                payment_status,
+                plan_type,
+                payment_method,
+                created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                userId,
+                invoice.id,
+                invoice.amount_due / 100, // Convert from cents
+                invoice.currency,
+                'failed',
+                'monthly', // Default plan type
+                'card' // Default payment method
+              ]
+            );
+            console.log(`✅ Payment history record created for failed payment: ${invoice.id}`);
+          } catch (insertError) {
+            if (insertError.code !== 'ER_DUP_ENTRY') {
+              console.error('Error creating payment history for failed payment:', insertError);
+            }
+          }
+        }
 
         console.log(`Payment failed for user ${userId}`);
       }
@@ -830,129 +1038,152 @@ const verifyPaymentSession = async (req, res) => {
 
     // Check payment status first
     if (session.payment_status !== 'paid') {
+      // Create payment history record for failed payment
+      try {
+        await pool.execute(
+          `INSERT INTO payment_history (
+            user_id,
+            stripe_session_id,
+            amount,
+            currency,
+            payment_status,
+            plan_type,
+            payment_method,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            session.id,
+            session.amount_total / 100,
+            session.currency,
+            session.payment_status,
+            session.metadata?.planType || 'monthly',
+            session.payment_method_types?.[0] || 'card'
+          ]
+        );
+        console.log(`📝 Payment history record created for failed payment: ${session.id}`);
+      } catch (insertError) {
+        if (insertError.code !== 'ER_DUP_ENTRY') {
+          console.error('Error creating payment history for failed payment:', insertError);
+        }
+      }
+
       return res.status(400).json({
         success: false,
         message: `Payment not completed. Status: ${session.payment_status}`
       });
     }
 
-    // If this was a guest session, update the user's subscription status
-    if (sessionUserId === 'guest') {
-      console.log('🔄 Processing guest session for user:', userId);
-      try {
-        // Update user subscription status
+    // Payment is successful - update database for all user types
+    console.log('✅ Payment successful, updating database for user:', userId);
+    
+    try {
+      // 1. Update user table: set is_subscribed = 1 and update stripe_cust_id if not exists
+      const [existingUser] = await pool.execute(
+        'SELECT stripe_cust_id FROM users WHERE id = ?',
+        [userId]
+      );
+
+      if (existingUser.length > 0) {
+        const currentStripeCustId = existingUser[0].stripe_cust_id;
+        const stripeCustId = currentStripeCustId || session.customer;
+        
         await pool.execute(
           `UPDATE users SET 
-           is_subscribed = true,
+           is_subscribed = 1,
            stripe_cust_id = ?,
            updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [session.customer, userId]
+          [stripeCustId, userId]
         );
-
-        // Check if payment record already exists
-        const [existingPayment] = await pool.execute(
-          'SELECT id FROM payment_history WHERE stripe_session_id = ?',
-          [session.id]
-        );
-
-        // Only insert payment details if record doesn't exist
-        if (existingPayment.length === 0) {
-          try {
-            await pool.execute(
-              `INSERT INTO payment_history (
-                user_id,
-                stripe_session_id,
-                amount,
-                currency,
-                payment_status,
-                plan_type,
-                payment_method,
-                created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-              [
-                userId,
-                session.id,
-                session.amount_total / 100,
-                session.currency,
-                session.payment_status,
-                session.metadata?.planType || 'monthly',
-                session.payment_method_types?.[0] || 'card'
-              ]
-            );
-            console.log(`✅ Payment record created for session ${session.id}`);
-          } catch (insertError) {
-            // Handle race condition where another process might have inserted the record
-            if (insertError.code === 'ER_DUP_ENTRY') {
-              console.log(`ℹ️ Payment record already exists for session ${session.id} (race condition)`);
-            } else {
-              throw insertError;
-            }
-          }
-        } else {
-          console.log(`ℹ️ Payment record already exists for session ${session.id}`);
-        }
-
-        // Check if subscription record already exists
-        const [existingSubscription] = await pool.execute(
-          'SELECT id FROM subscriptions WHERE user_id = ? AND subscription_id = ?',
-          [userId, session.subscription || null]
-        );
-
-        // Only create subscription record if it doesn't exist
-        if (existingSubscription.length === 0) {
-          const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
-          try {
-            await pool.execute(
-              `INSERT INTO subscriptions (
-                user_id,
-                subscription_id,
-                plan,
-                type,
-                status,
-                subscription_minutes,
-                amount,
-                currency,
-                billing_interval,
-                current_period_start,
-                current_period_end,
-                created_at,
-                updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-              [
-                userId,
-                session.subscription || null,
-                session.metadata?.planType || 'monthly',
-                'month',
-                'active',
-                subscriptionMinutes,
-                session.amount_total / 100,
-                session.currency,
-                'month',
-                new Date(session.created * 1000),
-                new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
-              ]
-            );
-            console.log(`✅ Subscription record created for user ${userId}`);
-          } catch (insertError) {
-            // Handle race condition where another process might have inserted the record
-            if (insertError.code === 'ER_DUP_ENTRY') {
-              console.log(`ℹ️ Subscription record already exists for user ${userId} (race condition)`);
-            } else {
-              throw insertError;
-            }
-          }
-        } else {
-          console.log(`ℹ️ Subscription record already exists for user ${userId}`);
-        }
-
-        console.log(`✅ Updated guest session for user ${userId}`);
-      } catch (error) {
-        console.error('Error updating guest session:', error);
+        console.log(`✅ User ${userId} subscription status updated. Stripe Customer ID: ${stripeCustId}`);
       }
+
+      // 2. Create payment history record if it doesn't exist
+      const [existingPayment] = await pool.execute(
+        'SELECT id FROM payment_history WHERE stripe_session_id = ?',
+        [session.id]
+      );
+
+      if (existingPayment.length === 0) {
+        await pool.execute(
+          `INSERT INTO payment_history (
+            user_id,
+            stripe_session_id,
+            amount,
+            currency,
+            payment_status,
+            plan_type,
+            payment_method,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            session.id,
+            session.amount_total / 100,
+            session.currency,
+            session.payment_status,
+            session.metadata?.planType || 'monthly',
+            session.payment_method_types?.[0] || 'card'
+          ]
+        );
+        console.log(`✅ Payment history record created for session ${session.id}`);
+      } else {
+        console.log(`ℹ️ Payment history record already exists for session ${session.id}`);
+      }
+
+      // 3. Create subscription record if it doesn't exist
+      const [existingSubscription] = await pool.execute(
+        'SELECT id FROM subscriptions WHERE user_id = ? AND subscription_id = ?',
+        [userId, session.subscription || null]
+      );
+
+      if (existingSubscription.length === 0) {
+        const subscriptionMinutes = process.env.PRO_MONTHLY_MINUTES || 3000;
+        await pool.execute(
+          `INSERT INTO subscriptions (
+            user_id,
+            subscription_id,
+            plan,
+            type,
+            status,
+            subscription_minutes,
+            amount,
+            currency,
+            billing_interval,
+            current_period_start,
+            current_period_end,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            session.subscription || null,
+            session.metadata?.planType || 'monthly',
+            'month',
+            'active',
+            subscriptionMinutes,
+            session.amount_total / 100,
+            session.currency,
+            'month',
+            new Date(session.created * 1000),
+            new Date((session.created + 30 * 24 * 60 * 60) * 1000) // 30 days from creation
+          ]
+        );
+        console.log(`✅ Subscription record created for user ${userId}`);
+      } else {
+        console.log(`ℹ️ Subscription record already exists for user ${userId}`);
+      }
+
+    } catch (error) {
+      console.error('❌ Error updating database:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Payment verification succeeded but database update failed. Please contact support.'
+      });
     }
 
-    console.log('✅ Payment verification successful');
+    console.log('✅ Payment verification and database update successful');
 
     // Get subscription details if available
     let subscription = null;

@@ -1,23 +1,70 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CheckCircle, ArrowRight, Home, User, CreditCard, Calendar, Clock, XCircle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 
+// Helper function to format date as "28th Aug, 2025"
+const formatDateWithOrdinal = (date: Date): string => {
+  const day = date.getDate();
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = monthNames[date.getMonth()];
+  const year = date.getFullYear();
+  
+  // Add ordinal suffix to day
+  const getOrdinalSuffix = (day: number): string => {
+    if (day > 3 && day < 21) return 'th';
+    switch (day % 10) {
+      case 1: return 'st';
+      case 2: return 'nd';
+      case 3: return 'rd';
+      default: return 'th';
+    }
+  };
+  
+  return `${day}${getOrdinalSuffix(day)} ${month}, ${year}`;
+};
+
 const SubscriptionSuccess: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const { user, updateProfile } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [paymentDetails, setPaymentDetails] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [verificationCompleted, setVerificationCompleted] = useState(false);
   const sessionId = searchParams.get('session_id');
 
+  // Memoize the profile refresh function to prevent infinite loops
+  const refreshUserProfile = useCallback(async () => {
+    try {
+      // Get fresh user data
+      const profileResponse = await apiService.getProfile();
+      if (profileResponse.success && profileResponse.data?.user) {
+        // Update local user data with fresh subscription info
+        const updatedUser = profileResponse.data.user;
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        // Refresh the user state in context
+        refreshUser();
+        console.log('✅ User profile refreshed after payment verification');
+      }
+    } catch (profileError) {
+      console.warn('⚠️ Failed to refresh user profile:', profileError);
+      // Don't fail the entire flow if profile refresh fails
+    }
+  }, [refreshUser]); // Only depend on refreshUser
+
   useEffect(() => {
+    // Prevent multiple verification attempts
+    if (verificationCompleted) {
+      return;
+    }
+
     const verifyPayment = async () => {
       if (!sessionId) {
         setError('No session ID found');
         setIsLoading(false);
+        setVerificationCompleted(true);
         return;
       }
 
@@ -25,6 +72,7 @@ const SubscriptionSuccess: React.FC = () => {
       const timeoutId = setTimeout(() => {
         setError('Payment verification timed out. Please check your subscription status or contact support.');
         setIsLoading(false);
+        setVerificationCompleted(true);
       }, 30000); // 30 seconds timeout
 
       try {
@@ -39,23 +87,10 @@ const SubscriptionSuccess: React.FC = () => {
           
           // Check payment status
           if (sessionData?.paymentStatus === 'paid') {
+            console.log('📊 Payment details received:', response.data);
             setPaymentDetails(response.data);
             // Refresh user profile data to get updated subscription info
-            try {
-              // Get fresh user data instead of trying to update with empty object
-              const profileResponse = await apiService.getProfile();
-              if (profileResponse.success && profileResponse.data?.user) {
-                // Update local user data with fresh subscription info
-                const updatedUser = profileResponse.data.user;
-                localStorage.setItem('user', JSON.stringify(updatedUser));
-                // Update the user state in context
-                updateProfile({ first_name: updatedUser.first_name, last_name: updatedUser.last_name });
-                console.log('✅ User profile refreshed after payment verification');
-              }
-            } catch (profileError) {
-              console.warn('⚠️ Failed to refresh user profile:', profileError);
-              // Don't fail the entire flow if profile refresh fails
-            }
+            await refreshUserProfile();
           } else if (sessionData?.paymentStatus === 'unpaid') {
             setError('Payment was not completed. Please try again or contact support.');
           } else if (sessionData?.paymentStatus === 'canceled') {
@@ -78,11 +113,12 @@ const SubscriptionSuccess: React.FC = () => {
         }
       } finally {
         setIsLoading(false);
+        setVerificationCompleted(true);
       }
     };
 
     verifyPayment();
-  }, [sessionId, updateProfile]);
+  }, [sessionId, refreshUserProfile, verificationCompleted]); // Include verificationCompleted in dependencies
 
   if (isLoading) {
     return (
@@ -182,15 +218,39 @@ const SubscriptionSuccess: React.FC = () => {
             </div>
 
             {/* Subscription Period */}
-            {paymentDetails.subscription && (
+            {(paymentDetails.subscription || paymentDetails.session) && (
               <div className="bg-blue-50 rounded-lg p-4">
                 <div className="flex items-center mb-2">
                   <Calendar className="h-5 w-5 text-blue-600 mr-2" />
                   <span className="font-medium text-blue-900">Subscription Period</span>
                 </div>
                 <div className="text-sm text-blue-700">
-                  <div>From: {new Date(paymentDetails.subscription.currentPeriodStart).toLocaleDateString()}</div>
-                  <div>To: {new Date(paymentDetails.subscription.currentPeriodEnd).toLocaleDateString()}</div>
+                  {paymentDetails.subscription && paymentDetails.subscription.currentPeriodStart && paymentDetails.subscription.currentPeriodEnd ? (
+                    <>
+                      <div>From: {(() => {
+                        const startDate = new Date(paymentDetails.subscription.currentPeriodStart);
+                        return startDate.getTime() > 0 ? formatDateWithOrdinal(startDate) : 'Processing...';
+                      })()}</div>
+                      <div>To: {(() => {
+                        const endDate = new Date(paymentDetails.subscription.currentPeriodEnd);
+                        return endDate.getTime() > 0 ? formatDateWithOrdinal(endDate) : 'Processing...';
+                      })()}</div>
+                    </>
+                  ) : paymentDetails.session && paymentDetails.session.createdAt ? (
+                    <>
+                      <div>From: {formatDateWithOrdinal(new Date(paymentDetails.session.createdAt))}</div>
+                      <div>To: {(() => {
+                        const endDate = new Date(paymentDetails.session.createdAt);
+                        endDate.setDate(endDate.getDate() + 30); // Add 30 days
+                        return formatDateWithOrdinal(endDate);
+                      })()}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div>From: Processing...</div>
+                      <div>To: Processing...</div>
+                    </>
+                  )}
                 </div>
               </div>
             )}

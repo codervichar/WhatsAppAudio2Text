@@ -14,8 +14,8 @@ const router = express.Router();
 
 // @route   POST /api/stripe/create-checkout-session
 // @desc    Create Stripe checkout session
-// @access  Public (temporarily for testing)
-router.post('/create-checkout-session', createCheckoutSession);
+// @access  Private
+router.post('/create-checkout-session', authenticateToken, createCheckoutSession);
 
 // @route   POST /api/stripe/webhook
 // @desc    Handle Stripe webhooks
