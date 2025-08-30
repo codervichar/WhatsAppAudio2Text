@@ -711,30 +711,6 @@ const handleSubscriptionCreated = async (subscription) => {
 const handleSubscriptionUpdated = async (subscription) => {
   const userId = subscription.metadata?.userId;
 
-  if (!userId) {
-    console.error('No userId in subscription metadata');
-    return;
-  }
-
-  console.log(`🔄 Processing subscription update for user ${userId}, status: ${subscription.status}`);
-
-  // Update subscription record with current period dates
-  await pool.execute(
-    `UPDATE subscriptions SET 
-     status = ?,
-     current_period_start = ?,
-     current_period_end = ?,
-     updated_at = CURRENT_TIMESTAMP
-     WHERE subscription_id = ?`,
-    [
-      subscription.status, 
-      safeTimestampToDate(subscription.current_period_start),
-      safeTimestampToDate(subscription.current_period_end),
-      subscription.id
-    ]
-  );
-
-  // Comprehensive subscription status management
   switch (subscription.status) {
     // Active statuses - User has access
     case 'active':
@@ -785,20 +761,45 @@ const handleSubscriptionUpdated = async (subscription) => {
         [userId]
       );
       
-      // Update subscription record to canceled with cancel_date
+      // Update existing subscription record to downgraded status
       await pool.execute(
         `UPDATE subscriptions SET 
-         status = 'canceled',
-         plan = 'free',
-         plan_type = 'free',
-         subscription_minutes = 30,
-         amount = 0,
-         currency = 'usd',
-         billing_interval = 'monthly',
+         status = 'downgraded',
          cancel_date = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
          WHERE subscription_id = ?`,
         [subscription.id]
+      );
+      
+      // Create a new subscription record for free plan
+      await pool.execute(
+        `INSERT INTO subscriptions (
+          user_id,
+          subscription_id,
+          plan,
+          type,
+          subscription_minutes,
+          used_minutes,
+          amount,
+          currency,
+          billing_interval,
+          status,
+          start_date,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          userId,
+          `free_${Date.now()}`,
+          'free',
+          'free',
+          30,
+          0,
+          0,
+          'usd',
+          'monthly',
+          'active'
+        ]
       );
       
       console.log(`❌ User ${userId} subscription canceled and moved to free plan`);
@@ -1385,27 +1386,52 @@ const handleSubscriptionDeleted = async (subscription) => {
 
   console.log(`🗑️ Processing subscription deletion for user ${userId}, subscription ${subscription.id}`);
 
-        // Update subscription record to canceled and free plan
-      await pool.execute(
-        `UPDATE subscriptions SET 
-         status = 'canceled',
-         plan = 'free',
-         plan_type = 'free',
-         subscription_minutes = 30,
-         amount = 0,
-         currency = 'usd',
-         billing_interval = 'monthly',
-         cancel_date = CURRENT_TIMESTAMP,
-         updated_at = CURRENT_TIMESTAMP
-         WHERE subscription_id = ?`,
-        [subscription.id]
-      );
+  // Update existing subscription record to downgraded status
+  await pool.execute(
+    `UPDATE subscriptions SET 
+     status = 'downgraded',
+     cancel_date = CURRENT_TIMESTAMP,
+     updated_at = CURRENT_TIMESTAMP
+     WHERE subscription_id = ?`,
+    [subscription.id]
+  );
 
-        // Update user subscription status
-      await pool.execute(
-        'UPDATE users SET is_subscribed = 0 WHERE id = ?',
-        [userId]
-      );
+  // Update user subscription status
+  await pool.execute(
+    'UPDATE users SET is_subscribed = 0 WHERE id = ?',
+    [userId]
+  );
+
+  // Create a new subscription record for free plan
+  await pool.execute(
+    `INSERT INTO subscriptions (
+      user_id,
+      subscription_id,
+      plan,
+      type,
+      subscription_minutes,
+      used_minutes,
+      amount,
+      currency,
+      billing_interval,
+      status,
+      start_date,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      userId,
+      `free_${Date.now()}`,
+      'free',
+      'free',
+      30,
+      0,
+      0,
+      'usd',
+      'monthly',
+      'active'
+    ]
+  );
 
   // Create payment history record for subscription deletion
   try {
@@ -1451,10 +1477,10 @@ const handleSubscriptionCanceled = async (subscription) => {
 
   console.log(`❌ Processing subscription cancellation for user ${userId}, subscription ${subscription.id}`);
 
-  // Update subscription record to canceled status
+  // Update existing subscription record to downgraded status
   await pool.execute(
     `UPDATE subscriptions SET 
-     status = 'canceled',
+     status = 'downgraded',
      cancel_date = CURRENT_TIMESTAMP,
      updated_at = CURRENT_TIMESTAMP
      WHERE subscription_id = ?`,
@@ -1465,6 +1491,37 @@ const handleSubscriptionCanceled = async (subscription) => {
   await pool.execute(
     'UPDATE users SET is_subscribed = 0 WHERE id = ?',
     [userId]
+  );
+
+  // Create a new subscription record for free plan
+  await pool.execute(
+    `INSERT INTO subscriptions (
+      user_id,
+      subscription_id,
+      plan,
+      type,
+      subscription_minutes,
+      used_minutes,
+      amount,
+      currency,
+      billing_interval,
+      status,
+      start_date,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      userId,
+      `free_${Date.now()}`,
+      'free',
+      'free',
+      30,
+      0,
+      0,
+      'usd',
+      'monthly',
+      'active'
+    ]
   );
 
   // Create payment history record for subscription cancellation
@@ -2237,7 +2294,7 @@ const getSubscriptionDetails = async (req, res) => {
     // Get payment history
     const [payments] = await pool.execute(
       `SELECT 
-         ph.*, s.plan_type as subscription_plan
+         ph.*, s.type as subscription_plan
        FROM payment_history ph
        LEFT JOIN subscriptions s ON ph.user_id = s.user_id
        WHERE ph.user_id = ?
@@ -2326,7 +2383,7 @@ const getPaymentHistory = async (req, res) => {
     // Get payment history with pagination
     const [payments] = await pool.execute(
       `SELECT 
-         ph.*, s.plan_type as subscription_plan
+         ph.*, s.type as subscription_plan
        FROM payment_history ph
        LEFT JOIN subscriptions s ON ph.user_id = s.user_id
        WHERE ph.user_id = ?
