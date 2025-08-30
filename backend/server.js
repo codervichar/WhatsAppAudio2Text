@@ -31,7 +31,8 @@ const corsOptions = {
       process.env.APP_URL || 'http://localhost:5173',
       'http://localhost:5173', // Vite default port
       'https://voicemessage2text.com', // Production frontend
-      'https://www.voicemessage2text.com' // Production frontend with www
+      'https://www.voicemessage2text.com', // Production frontend with www
+      'https://api.voicemessage2text.com' // API domain
     ];
     
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -76,6 +77,17 @@ if (process.env.NODE_ENV === 'development') {
 } else {
   app.use(morgan('combined'));
 }
+
+// Debug middleware for API requests
+app.use((req, res, next) => {
+  console.log(`🔍 ${req.method} ${req.originalUrl} - ${new Date().toISOString()}`);
+  console.log(`📋 Headers:`, {
+    'user-agent': req.headers['user-agent'],
+    'origin': req.headers['origin'],
+    'authorization': req.headers['authorization'] ? 'Bearer [HIDDEN]' : 'None'
+  });
+  next();
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
