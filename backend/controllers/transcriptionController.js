@@ -41,6 +41,33 @@ const getTranscriptionHistory = async (req, res) => {
     const status = req.query.status ? String(req.query.status).trim() : null;
     const search = req.query.search ? String(req.query.search).trim() : null;
 
+    // Ensure proper type conversion for MySQL
+    const userIdInt = parseInt(userId);
+    const limitInt = parseInt(limit);
+    const offsetInt = parseInt(offset);
+
+    // Validate parameters
+    if (isNaN(userIdInt) || userIdInt <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID'
+      });
+    }
+
+    if (isNaN(limitInt) || limitInt <= 0 || limitInt > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid limit parameter'
+      });
+    }
+
+    if (isNaN(offsetInt) || offsetInt < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid offset parameter'
+      });
+    }
+
     console.log('🔍 Transcription history request:', {
       userId,
       page,
@@ -52,7 +79,7 @@ const getTranscriptionHistory = async (req, res) => {
 
     // Build query dynamically to avoid parameter mismatch
     const conditions = ['user_id = ?'];
-    const params = [userId];
+    const params = [userIdInt];
 
     // Add status filter
     if (status && status !== 'all') {
@@ -67,7 +94,7 @@ const getTranscriptionHistory = async (req, res) => {
     }
 
     // Add pagination
-    params.push(limit, offset);
+    params.push(limitInt, offsetInt);
 
     // Debug: Log the conditions and parameters
     console.log('🔍 Conditions:', conditions);
@@ -99,11 +126,20 @@ const getTranscriptionHistory = async (req, res) => {
 
     let transcriptions;
     try {
+      // Log parameter types for debugging
+      console.log('🔍 Parameter types:', {
+        userIdInt: typeof userIdInt,
+        limitInt: typeof limitInt,
+        offsetInt: typeof offsetInt,
+        params: params.map(p => ({ value: p, type: typeof p }))
+      });
+
       [transcriptions] = await pool.execute(query, params);
     } catch (dbError) {
       console.error('❌ Database query error:', dbError);
       console.error('❌ Query:', query);
       console.error('❌ Parameters:', params);
+      console.error('❌ Parameter types:', params.map(p => typeof p));
       console.error('❌ Error code:', dbError.code);
       console.error('❌ Error number:', dbError.errno);
       console.error('❌ SQL state:', dbError.sqlState);
@@ -114,14 +150,25 @@ const getTranscriptionHistory = async (req, res) => {
         console.error('❌ Parameter count mismatch detected');
         console.error('❌ Expected parameters:', params.length);
         console.error('❌ Query placeholders:', (query.match(/\?/g) || []).length);
+        
+        // Try alternative approach with explicit type casting
+        try {
+          console.log('🔄 Trying alternative query with explicit type casting...');
+          const alternativeQuery = query.replace('LIMIT ? OFFSET ?', 'LIMIT CAST(? AS UNSIGNED) OFFSET CAST(? AS UNSIGNED)');
+          [transcriptions] = await pool.execute(alternativeQuery, params);
+          console.log('✅ Alternative query succeeded');
+        } catch (altError) {
+          console.error('❌ Alternative query also failed:', altError.message);
+          throw new Error(`Database query failed: ${dbError.message}`);
+        }
+      } else {
+        throw new Error(`Database query failed: ${dbError.message}`);
       }
-      
-      throw new Error(`Database query failed: ${dbError.message}`);
     }
 
     // Get total count for pagination
     const countConditions = ['user_id = ?'];
-    const countParams = [userId];
+    const countParams = [userIdInt];
     
     if (status && status !== 'all') {
       countConditions.push('status = ?');
@@ -162,7 +209,7 @@ const getTranscriptionHistory = async (req, res) => {
           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
          FROM transcriptions 
          WHERE user_id = ?`,
-        [userId]
+        [userIdInt]
       );
     } catch (dbError) {
       console.error('❌ Database stats query error:', dbError);
@@ -251,7 +298,9 @@ const getTranscriptionHistory = async (req, res) => {
       message: error.message,
       stack: error.stack,
       code: error.code,
-      sqlMessage: error.sqlMessage
+      sqlMessage: error.sqlMessage,
+      errno: error.errno,
+      sqlState: error.sqlState
     });
     
     // Provide more specific error messages
@@ -265,7 +314,19 @@ const getTranscriptionHistory = async (req, res) => {
       errorMessage = 'Invalid query parameters provided';
       statusCode = 400;
     } else if (error.message.includes('ER_NO_SUCH_TABLE')) {
-      errorMessage = 'Transcriptions table not found';
+      errorMessage = 'Transcriptions table not found. Please run database migration.';
+      statusCode = 500;
+    } else if (error.code === 'ER_NO_SUCH_TABLE') {
+      errorMessage = 'Transcriptions table not found. Please run database migration.';
+      statusCode = 500;
+    } else if (error.code === 'ER_BAD_FIELD_ERROR') {
+      errorMessage = 'Database schema error. Please check table structure.';
+      statusCode = 500;
+    } else if (error.code === 'ER_ACCESS_DENIED_ERROR') {
+      errorMessage = 'Database access denied. Please check database credentials.';
+      statusCode = 500;
+    } else if (error.code === 'ECONNREFUSED') {
+      errorMessage = 'Database connection refused. Please check if database is running.';
       statusCode = 500;
     }
     
@@ -274,7 +335,9 @@ const getTranscriptionHistory = async (req, res) => {
       message: errorMessage,
       ...(process.env.NODE_ENV === 'development' && { 
         details: error.message,
-        code: error.code 
+        code: error.code,
+        errno: error.errno,
+        sqlState: error.sqlState
       })
     });
   }
