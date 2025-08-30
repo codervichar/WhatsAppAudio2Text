@@ -6,8 +6,8 @@ const validateRegistration = (req, res, next) => {
     first_name: Joi.string().min(2).max(50).required(),
     last_name: Joi.string().min(2).max(50).required(),
     email: Joi.string().email().required(),
-    phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).optional(),
-    wtp_number: Joi.string().pattern(/^[0-9]{7,15}$/).optional(),
+    phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).allow('').optional(),
+    wtp_number: Joi.string().pattern(/^[0-9]{7,15}$/).allow('').optional(),
     password: Joi.string().min(6).max(128).required(),
     language: Joi.string().valid(
       'ar', 'az', 'zh', 'zh-TW', 'da', 'de', 'el', 
@@ -124,6 +124,28 @@ const validateProfileUpdate = (req, res, next) => {
   next();
 };
 
+// WhatsApp transcript update validation
+const validateWhatsAppTranscriptUpdate = (req, res, next) => {
+  const schema = Joi.object({
+    name: Joi.string().min(2).max(100).optional(),
+    phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).allow('').optional(),
+    country_code: Joi.number().integer().positive().required(),
+    wtp_number: Joi.string().pattern(/^[0-9]{7,15}$/).allow('').optional(),
+    wa_language: Joi.number().integer().positive().required(),
+    password: Joi.string().min(6).max(128).optional()
+  });
+
+  const { error } = schema.validate(req.body);
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation error',
+      details: error.details[0].message
+    });
+  }
+  next();
+};
+
 // Password change validation
 const validatePasswordChange = (req, res, next) => {
   const schema = Joi.object({
@@ -183,6 +205,7 @@ module.exports = {
   validateRefreshToken,
   validateFileUpload,
   validateProfileUpdate,
+  validateWhatsAppTranscriptUpdate,
   validatePasswordChange,
   validateForgotPassword,
   validateResetPassword

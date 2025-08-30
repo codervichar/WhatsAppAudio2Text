@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
-const { validateProfileUpdate } = require('../middleware/validation');
+const { validateProfileUpdate, validateWhatsAppTranscriptUpdate } = require('../middleware/validation');
 const Language = require('../models/language');
 const Country = require('../models/country');
 
@@ -50,6 +50,6 @@ router.get('/countries', getCountries);
 // @route   POST /api/users/update-profile
 // @desc    Update WhatsApp transcript info (was /whatsapp-transcription)
 // @access  Private
-router.post('/update-profile', authenticateToken, updateWhatsAppTranscript);
+router.post('/update-profile', authenticateToken, validateWhatsAppTranscriptUpdate, updateWhatsAppTranscript);
 
 module.exports = router; 

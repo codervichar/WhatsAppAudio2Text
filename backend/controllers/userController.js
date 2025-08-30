@@ -370,7 +370,7 @@ const updateWhatsAppTranscript = async (req, res) => {
     }
     if (wtp_number !== undefined) {
       updateFields.push('wtp_number = ?');
-      updateValues.push(wtp_number);
+      updateValues.push(wtp_number || null);
     }
     if (wa_language !== undefined) {
       updateFields.push('wa_language = ?');

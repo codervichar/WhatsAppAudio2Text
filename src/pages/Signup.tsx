@@ -157,7 +157,7 @@ const Signup: React.FC = () => {
         last_name: lastName,
         email,
         phone_number: formattedPhoneNumber,
-        wtp_number: phoneNumber, // Store WhatsApp number separately
+        wtp_number: phoneNumber || undefined, // Store WhatsApp number separately, send undefined if empty
         password,
         country_id: selectedCountry?.id
       })

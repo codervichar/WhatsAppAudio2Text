@@ -110,7 +110,7 @@ const Dashboard: React.FC = () => {
     try {
       const res = await apiService.updateWhatsAppTranscript({
         country_code: selectedCountry.id,
-        wtp_number: waNumber,
+        wtp_number: waNumber || undefined,
         wa_language: waLang as number
       });
       if (res.success) {
