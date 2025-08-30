@@ -93,32 +93,24 @@ const getTranscriptionHistory = async (req, res) => {
       params.push(`%${search.trim()}%`, `%${search.trim()}%`);
     }
 
-    // Add pagination
-    params.push(limitInt, offsetInt);
+    // No need to add pagination params since we're using template literals
 
     // Debug: Log the conditions and parameters
     console.log('🔍 Conditions:', conditions);
-    console.log('🔍 Parameters before pagination:', params.slice(0, -2));
-    console.log('🔍 Pagination params:', params.slice(-2));
+    console.log('🔍 Parameters:', params);
+    console.log('🔍 Limit:', limitInt, 'Offset:', offsetInt);
 
-    // Use a simpler query structure to avoid template literal issues
-    const query = 'SELECT ' +
-      'id, ' +
-      'original_filename as fileName, ' +
-      'file_size as fileSize, ' +
-      'transcription_text as text, ' +
-      'duration as audioLength, ' +
-      'status, ' +
-      'language, ' +
-      'confidence_score, ' +
-      'COALESCE(word_count, 0) as word_count, ' +
-      'request_id, ' +
-      'created_at as createdAt, ' +
-      'updated_at as updatedAt ' +
-      'FROM transcriptions ' +
-      'WHERE ' + conditions.join(' AND ') + ' ' +
-      'ORDER BY created_at DESC ' +
-      'LIMIT ? OFFSET ?';
+    // Use template literals for LIMIT and OFFSET since they're already validated
+    const query = `
+      SELECT id, original_filename AS fileName, file_size AS fileSize,
+             transcription_text AS text, duration AS audioLength, status,
+             language, confidence_score, COALESCE(word_count, 0) AS word_count,
+             request_id, created_at AS createdAt, updated_at AS updatedAt
+      FROM transcriptions
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY created_at DESC
+      LIMIT ${limitInt} OFFSET ${offsetInt}
+    `;
 
     // Debug logging
     console.log('🔍 Transcription query:', query);
@@ -126,44 +118,21 @@ const getTranscriptionHistory = async (req, res) => {
 
     let transcriptions;
     try {
-      // Log parameter types for debugging
-      console.log('🔍 Parameter types:', {
-        userIdInt: typeof userIdInt,
-        limitInt: typeof limitInt,
-        offsetInt: typeof offsetInt,
-        params: params.map(p => ({ value: p, type: typeof p }))
-      });
+      // Log the final query for debugging
+      console.log('🔍 Final query:', query);
+      console.log('🔍 Parameters:', params);
 
       [transcriptions] = await pool.execute(query, params);
     } catch (dbError) {
       console.error('❌ Database query error:', dbError);
       console.error('❌ Query:', query);
       console.error('❌ Parameters:', params);
-      console.error('❌ Parameter types:', params.map(p => typeof p));
       console.error('❌ Error code:', dbError.code);
       console.error('❌ Error number:', dbError.errno);
       console.error('❌ SQL state:', dbError.sqlState);
       console.error('❌ SQL message:', dbError.sqlMessage);
       
-      // Check for specific error types
-      if (dbError.code === 'ER_WRONG_ARGUMENTS') {
-        console.error('❌ Parameter count mismatch detected');
-        console.error('❌ Expected parameters:', params.length);
-        console.error('❌ Query placeholders:', (query.match(/\?/g) || []).length);
-        
-        // Try alternative approach with explicit type casting
-        try {
-          console.log('🔄 Trying alternative query with explicit type casting...');
-          const alternativeQuery = query.replace('LIMIT ? OFFSET ?', 'LIMIT CAST(? AS UNSIGNED) OFFSET CAST(? AS UNSIGNED)');
-          [transcriptions] = await pool.execute(alternativeQuery, params);
-          console.log('✅ Alternative query succeeded');
-        } catch (altError) {
-          console.error('❌ Alternative query also failed:', altError.message);
-          throw new Error(`Database query failed: ${dbError.message}`);
-        }
-      } else {
-        throw new Error(`Database query failed: ${dbError.message}`);
-      }
+      throw new Error(`Database query failed: ${dbError.message}`);
     }
 
     // Get total count for pagination
