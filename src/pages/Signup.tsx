@@ -57,9 +57,9 @@ const Signup: React.FC = () => {
         const response = await apiService.getCountries()
         if (response.success && response.data.length > 0) {
           setCountryOptions(response.data)
-          // Set Indonesia (+62) as default country
-          const indonesiaCountry = response.data.find((country: { phonecode?: number }) => country.phonecode === 62)
-          setSelectedCountry(indonesiaCountry || response.data[0])
+          // Set US (+1) as default country
+          const usCountry = response.data.find((country: { code?: string }) => country.code === 'US')
+          setSelectedCountry(usCountry || response.data[0])
         }
       } catch (error) {
         console.error('Failed to fetch countries:', error)

@@ -58,7 +58,9 @@ const Dashboard: React.FC = () => {
     apiService.getCountries().then(data => {
       if (data.success && data.data.length > 0) {
         setCountryOptions(data.data);
-        setWaCountry(data.data[0].code);
+        // Set US as default country for WhatsApp
+        const usCountry = data.data.find((country: { code?: string }) => country.code === 'US');
+        setWaCountry(usCountry ? usCountry.code : data.data[0].code);
       }
     }).catch(error => {
       console.error('Failed to fetch countries:', error);
