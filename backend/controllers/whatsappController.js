@@ -15,7 +15,7 @@ async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, sp
     console.log('--------------------------------deepgramTranscriptCallback--------------------------------');
     const apiKey = process.env.DEEPGRAM_API_KEY;
     // Use the full webhook URL from environment variable
-    const callBackUrl = "https://api.voicemessage2text.com/api/webhook/deepgram/hook";
+    const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL || `${process.env.APP_URL || 'https://api.voicemessage2text.com'}/api/webhook/deepgram/hook`;
     
     console.log('Deepgram callback URL:', callBackUrl);
     const apiUrl = 'https://api.deepgram.com/v1/listen';
@@ -514,21 +514,28 @@ const handleDeepgramCallback = async (req, res) => {
     
     console.log(`Found transcript record ID: ${transcript.id} for request_id: ${requestId}`);
     
-    // Extract transcription text from Deepgram response
+    // Check if transcription was successful or failed
+    const isSuccessful = data.results && 
+                        data.results.channels && 
+                        data.results.channels[0] && 
+                        data.results.channels[0].alternatives && 
+                        data.results.channels[0].alternatives[0];
+    
     let transcriptText = '';
     let confidenceScore = 0;
     let wordCount = 0;
+    let status = 'failed';
     
-    if (data.results && 
-        data.results.channels && 
-        data.results.channels[0] && 
-        data.results.channels[0].alternatives && 
-        data.results.channels[0].alternatives[0]) {
-      
+    if (isSuccessful) {
       const alternative = data.results.channels[0].alternatives[0];
       transcriptText = alternative.transcript || '';
       confidenceScore = alternative.confidence || 0;
       wordCount = transcriptText.split(' ').filter(word => word.length > 0).length;
+      status = 'completed';
+      console.log('✅ Transcription successful');
+    } else {
+      console.log('❌ Transcription failed - no results in response');
+      transcriptText = 'Transcription failed - no results available';
     }
     
     // Update transcript fields with transcription text
@@ -543,7 +550,7 @@ const handleDeepgramCallback = async (req, res) => {
              duration = ?, 
              updated_at = NOW() 
          WHERE request_id = ?`,
-        ['completed', transcriptText, confidenceScore, wordCount, JSON.stringify(data.metadata), duration, requestId]
+        [status, transcriptText, confidenceScore, wordCount, JSON.stringify(data.metadata), duration, requestId]
       );
     } catch (updateError) {
       if (updateError.code === 'ER_BAD_FIELD_ERROR') {
@@ -555,28 +562,37 @@ const handleDeepgramCallback = async (req, res) => {
                duration = ?, 
                updated_at = NOW() 
            WHERE id = ?`,
-          ['completed', duration, transcript.id]
+          [status, duration, transcript.id]
         );
       } else {
         throw updateError;
       }
     }
     
-    // Deduct minutes from user subscription since transcription was successful
-    if (duration && transcript.user_id) {
+    // Only deduct minutes if transcription was successful
+    if (status === 'completed' && duration && transcript.user_id) {
       console.log('💰 Deducting minutes for successful transcription...');
+      console.log(`📊 Deduction details: User ID: ${transcript.user_id}, Duration: ${duration} seconds (${(duration/60).toFixed(2)} minutes)`);
+      
       const deductionResult = await deductMinutesFromSubscription(transcript.user_id, duration);
       
       if (deductionResult.success) {
         console.log(`✅ Minutes deducted successfully: ${deductionResult.deducted.toFixed(2)} minutes`);
         console.log(`📊 Remaining minutes: ${deductionResult.remaining.toFixed(2)}`);
+        console.log(`📊 Deduction completed for transcription ID: ${transcript.id}, Request ID: ${requestId}`);
       } else {
         console.log(`⚠️ Minute deduction failed: ${deductionResult.message}`);
+        console.log(`📊 Deduction failed for transcription ID: ${transcript.id}, Request ID: ${requestId}`);
         // Note: We don't fail the transcription here, just log the issue
         // The transcription was successful, but minute deduction failed
       }
+    } else if (status === 'failed') {
+      console.log('⚠️ Transcription failed - no minutes deducted');
+      console.log(`📊 No deduction for failed transcription ID: ${transcript.id}, Request ID: ${requestId}`);
     } else {
       console.log('⚠️ Cannot deduct minutes: missing duration or user_id');
+      console.log(`📊 Missing data - Status: ${status}, Duration: ${duration}, User ID: ${transcript.user_id}`);
+      console.log(`📊 No deduction for transcription ID: ${transcript.id}, Request ID: ${requestId}`);
     }
     
     // Upload JSON file to S3 - store in same folder as audio file using requestId
@@ -688,4 +704,84 @@ const handleDeepgramCallback = async (req, res) => {
   }
 };
 
-module.exports = { handleWhatsAppMessage, verifyWebhook, handleDeepgramCallback }; 
+// Test endpoint to manually trigger webhook callback
+const testWebhookCallback = async (req, res) => {
+  try {
+    const { requestId, duration, userId } = req.body;
+    
+    if (!requestId || !duration || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required parameters: requestId, duration, userId'
+      });
+    }
+    
+    console.log('🧪 Manual webhook callback test triggered');
+    console.log(`📊 Test parameters: Request ID: ${requestId}, Duration: ${duration}, User ID: ${userId}`);
+    
+    // Find transcript by request_id
+    const [transcripts] = await pool.execute(
+      'SELECT * FROM transcriptions WHERE request_id = ?',
+      [requestId]
+    );
+    
+    if (transcripts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transcript not found for the given request ID'
+      });
+    }
+    
+    const transcript = transcripts[0];
+    
+    // Simulate successful transcription
+    const isSuccessful = true;
+    let status = 'completed';
+    
+    if (isSuccessful) {
+      console.log('✅ Simulated transcription successful');
+      
+      // Deduct minutes
+      if (status === 'completed' && duration && transcript.user_id) {
+        console.log('💰 Deducting minutes for successful transcription...');
+        const deductionResult = await deductMinutesFromSubscription(transcript.user_id, duration);
+        
+        if (deductionResult.success) {
+          console.log(`✅ Minutes deducted successfully: ${deductionResult.deducted.toFixed(2)} minutes`);
+          console.log(`📊 Remaining minutes: ${deductionResult.remaining.toFixed(2)}`);
+        } else {
+          console.log(`⚠️ Minute deduction failed: ${deductionResult.message}`);
+        }
+        
+        res.json({
+          success: true,
+          message: 'Webhook callback test completed successfully',
+          data: {
+            transcriptionId: transcript.id,
+            requestId: requestId,
+            deductionResult: deductionResult
+          }
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'Cannot deduct minutes: missing duration or user_id'
+        });
+      }
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Simulated transcription failed'
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Test webhook callback error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+module.exports = { handleWhatsAppMessage, verifyWebhook, handleDeepgramCallback, testWebhookCallback }; 

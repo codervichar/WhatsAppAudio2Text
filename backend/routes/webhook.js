@@ -1,5 +1,5 @@
 const express = require('express');
-const { handleWhatsAppMessage, verifyWebhook, handleDeepgramCallback } = require('../controllers/whatsappController');
+const { handleWhatsAppMessage, verifyWebhook, handleDeepgramCallback, testWebhookCallback } = require('../controllers/whatsappController');
 
 const router = express.Router();
 
@@ -21,5 +21,8 @@ router.get('/deepgram/hook', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Test endpoint to manually trigger webhook callback
+router.post('/deepgram/test', testWebhookCallback);
 
 module.exports = router; 

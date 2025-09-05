@@ -1,7 +1,109 @@
 const path = require('path');
 const fs = require('fs').promises;
+const axios = require('axios');
+const AWS = require('aws-sdk');
 const { pool } = require('../config/database');
 const { checkUserMinutes, deductMinutesFromSubscription } = require('../utils/subscriptionUtils');
+
+// Initialize AWS S3
+let s3 = null;
+const initializeS3 = () => {
+  if (!s3) {
+    if (!process.env.AWS_KEY || !process.env.AWS_SECRET || !process.env.AWS_REGION || !process.env.AWS_BUCKET) {
+      console.warn('⚠️ AWS environment variables not configured. S3 functionality will be disabled.');
+      return null;
+    }
+    
+    try {
+      s3 = new AWS.S3({
+        accessKeyId: process.env.AWS_KEY,
+        secretAccessKey: process.env.AWS_SECRET,
+        region: process.env.AWS_REGION,
+      });
+      console.log('✅ AWS S3 initialized successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize AWS S3:', error.message);
+      return null;
+    }
+  }
+  return s3;
+};
+
+// Deepgram transcription function for file uploads
+async function deepgramTranscribeFile(transcriptionId, filePath, language = 'en', speakerIdentification = false) {
+  try {
+    console.log('🚀 Starting Deepgram transcription for file:', filePath);
+    
+    const apiKey = process.env.DEEPGRAM_API_KEY;
+    if (!apiKey) {
+      throw new Error('Deepgram API key not configured');
+    }
+
+    // Initialize S3
+    const s3Instance = initializeS3();
+    if (!s3Instance) {
+      throw new Error('S3 not configured');
+    }
+
+    // Read the file
+    const fileBuffer = await fs.readFile(filePath);
+    const fileName = path.basename(filePath);
+    
+    // Upload to S3
+    const s3Key = `transcriptions/${transcriptionId}/${fileName}`;
+    await s3Instance.putObject({
+      Bucket: process.env.AWS_BUCKET,
+      Key: s3Key,
+      Body: fileBuffer,
+      ContentType: 'audio/mpeg' // Default, could be improved by detecting actual type
+    }).promise();
+    
+    const s3Url = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+    console.log('✅ File uploaded to S3:', s3Url);
+
+    // Call Deepgram API
+    const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL || `${process.env.APP_URL || 'https://api.voicemessage2text.com'}/api/webhook/deepgram/hook`;
+    const apiUrl = 'https://api.deepgram.com/v1/listen';
+    
+    let queryString = '?model=whisper-large&smart_format=true';
+    
+    if (speakerIdentification) {
+      queryString += '&punctuate=true&paragraphs=true&utterances=true&diarize=true';
+    }
+    
+    if (language && language !== 'en') {
+      queryString += `&language=${language}`;
+    } else {
+      queryString += '&detect_language=true';
+    }
+    
+    queryString += `&callback=${callBackUrl}`;
+    
+    const fullApiUrl = apiUrl + queryString;
+    
+    const headers = {
+      'Authorization': `Token ${apiKey}`,
+      'Content-Type': 'application/json'
+    };
+    
+    const requestBody = {
+      url: s3Url
+    };
+    
+    const response = await axios.post(fullApiUrl, requestBody, { headers });
+    
+    if (response.data && response.data.request_id) {
+      console.log('✅ Deepgram transcription initiated:', response.data.request_id);
+      return response.data.request_id;
+    } else {
+      throw new Error('Deepgram API returned no request_id');
+    }
+    
+  } catch (error) {
+    console.error('❌ Deepgram transcription error:', error);
+    throw error;
+  }
+}
 
 // @desc    Upload audio file for transcription
 // @route   POST /api/files/upload
@@ -41,7 +143,7 @@ const uploadFile = async (req, res) => {
       console.log('⚠️ Could not get audio duration, proceeding with 0 duration');
     }
 
-    // Check if user has sufficient minutes before processing
+    // Check if user has sufficient minutes before processing (but don't deduct yet)
     const minutesCheck = await checkUserMinutes(userId, duration);
     
     if (!minutesCheck.success) {
@@ -92,26 +194,38 @@ const uploadFile = async (req, res) => {
 
     const transcriptionId = transcriptionResult.insertId;
 
-    // Here you would typically trigger the transcription process
-    // For now, we'll simulate it by updating the status to "processing"
-    await pool.execute(
-      'UPDATE transcriptions SET status = ? WHERE id = ?',
-      ['processing', transcriptionId]
-    );
-
-    // Deduct minutes immediately since we're processing the file
-    if (duration > 0) {
-      console.log('💰 Deducting minutes for file upload transcription...');
-      const deductionResult = await deductMinutesFromSubscription(userId, duration);
+    // Trigger the actual transcription process
+    try {
+      // Start transcription immediately after upload
+      const requestId = await deepgramTranscribeFile(transcriptionId, file.path, 'en', false);
       
-      if (deductionResult.success) {
-        console.log(`✅ Minutes deducted successfully: ${deductionResult.deducted.toFixed(2)} minutes`);
-        console.log(`📊 Remaining minutes: ${deductionResult.remaining.toFixed(2)}`);
-      } else {
-        console.log(`⚠️ Minute deduction failed: ${deductionResult.message}`);
-        // Note: We don't fail the upload here, just log the issue
-      }
+      // Update transcription record with request_id and status
+      await pool.execute(
+        'UPDATE transcriptions SET status = ?, request_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        ['processing', requestId, transcriptionId]
+      );
+
+      console.log(`✅ Transcription initiated for uploaded file with request_id: ${requestId}`);
+      console.log('📝 Minutes will be deducted upon successful completion.');
+      
+    } catch (transcriptionError) {
+      console.error('❌ Failed to start transcription for uploaded file:', transcriptionError);
+      
+      // Update status to failed
+      await pool.execute(
+        'UPDATE transcriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        ['failed', transcriptionId]
+      );
+      
+      // Note: We don't fail the upload here, just mark transcription as failed
+      // The user can retry transcription later
     }
+
+    // Get the final transcription status
+    const [finalTranscription] = await pool.execute(
+      'SELECT status, request_id FROM transcriptions WHERE id = ?',
+      [transcriptionId]
+    );
 
     res.status(201).json({
       success: true,
@@ -127,7 +241,8 @@ const uploadFile = async (req, res) => {
         },
         transcription: {
           id: transcriptionId,
-          status: 'processing'
+          status: finalTranscription[0]?.status || 'pending',
+          request_id: finalTranscription[0]?.request_id || null
         }
       }
     });
@@ -311,10 +426,14 @@ const transcribeFile = async (req, res) => {
   try {
     const userId = req.user.id;
     const fileId = req.params.id;
+    const { language = 'en', speakerIdentification = false } = req.body;
 
-    // Get the transcription record for this file
+    // Get the transcription record and file details
     const [transcriptions] = await pool.execute(
-      'SELECT id, status FROM transcriptions WHERE audio_file_id = ? AND user_id = ?',
+      `SELECT t.id, t.status, t.duration, af.file_path, af.original_name 
+       FROM transcriptions t 
+       JOIN audio_files af ON t.audio_file_id = af.id 
+       WHERE t.audio_file_id = ? AND t.user_id = ?`,
       [fileId, userId]
     );
 
@@ -334,18 +453,65 @@ const transcribeFile = async (req, res) => {
       });
     }
 
+    if (transcription.status === 'completed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Transcription is already completed'
+      });
+    }
+
+    // Check if user has sufficient minutes before processing
+    const durationInSeconds = parseDurationToSeconds(transcription.duration);
+    const minutesCheck = await checkUserMinutes(userId, durationInSeconds);
+    
+    if (!minutesCheck.success) {
+      return res.status(403).json({
+        success: false,
+        message: `Insufficient minutes remaining. You have ${minutesCheck.remaining.toFixed(2)} minutes left but need ${minutesCheck.required.toFixed(2)} minutes for this file. Please upgrade your plan.`
+      });
+    }
+
     // Update status to processing
     await pool.execute(
       'UPDATE transcriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       ['processing', transcription.id]
     );
 
-    // Here you would trigger the actual transcription service
-    // For simulation, we'll just return success
-    res.json({
-      success: true,
-      message: 'Transcription started successfully'
-    });
+    try {
+      // Trigger actual transcription with Deepgram
+      const requestId = await deepgramTranscribeFile(transcription.id, transcription.file_path, language, speakerIdentification);
+      
+      // Update transcription record with request_id
+      await pool.execute(
+        'UPDATE transcriptions SET request_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [requestId, transcription.id]
+      );
+
+      console.log(`✅ Transcription initiated for file ${transcription.original_name} with request_id: ${requestId}`);
+      
+      res.json({
+        success: true,
+        message: 'Transcription started successfully',
+        data: {
+          requestId: requestId,
+          status: 'processing'
+        }
+      });
+
+    } catch (transcriptionError) {
+      console.error('❌ Failed to start transcription:', transcriptionError);
+      
+      // Update status to failed
+      await pool.execute(
+        'UPDATE transcriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        ['failed', transcription.id]
+      );
+
+      res.status(500).json({
+        success: false,
+        message: 'Failed to start transcription. Please try again later.'
+      });
+    }
 
   } catch (error) {
     console.error('Transcribe file error:', error);
@@ -355,6 +521,20 @@ const transcribeFile = async (req, res) => {
     });
   }
 };
+
+// Helper function to parse duration string to seconds
+function parseDurationToSeconds(durationStr) {
+  if (!durationStr || durationStr === '0:00') return 0;
+  
+  const parts = durationStr.split(':');
+  if (parts.length === 2) {
+    const minutes = parseInt(parts[0]) || 0;
+    const seconds = parseInt(parts[1]) || 0;
+    return minutes * 60 + seconds;
+  }
+  
+  return 0;
+}
 
 // @desc    Download original audio file
 // @route   GET /api/files/:id/download
