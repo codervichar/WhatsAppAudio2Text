@@ -235,9 +235,9 @@ const Dashboard: React.FC = () => {
         day: 'numeric', 
         year: 'numeric' 
       });
-      planLabel = `Monthly Paid (3000 min) - Canceling on ${endDate}`;
+      planLabel = `Monthly Paid (${subscriptionMinutes} min) - Canceling on ${endDate}`;
     } else {
-      planLabel = 'Monthly Paid (3000 min)';
+      planLabel = `Monthly Paid (${subscriptionMinutes} min)`;
     }
   } else if (plan === 'free') {
     planLabel = `Free Plan (${subscriptionMinutes} min)`;
