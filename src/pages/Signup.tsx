@@ -156,11 +156,11 @@ const Signup: React.FC = () => {
         email,
         wtp_number: phoneNumber || undefined, // Store WhatsApp number separately, send undefined if empty
         password,
-        country_code: selectedCountry?.id // Updated to match backend expectation
+        country_id: selectedCountry?.id // Updated to match backend expectation
       })
       
-      // Redirect to welcome page after successful signup
-      navigate('/welcome')
+      // Redirect to signup page after successful signup
+      navigate('/signup')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'An error occurred during signup')
     } finally {
