@@ -642,36 +642,30 @@ const Dashboard: React.FC = () => {
                     }`}>
                     {isCanceling ? 'Pro Plan - Canceling' : 'Pro Plan Active'}
                   </div>
-                  <div className="flex gap-2">
-                    <Link
-                      to="/subscription-management"
-                      className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm"
-                    >
-                      Manage
-                    </Link>
+                  <div className="w-full">
                     {!isCanceling ? (
                       <button
                         onClick={() => setShowCancelConfirm(true)}
-                        className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-red-600 hover:to-red-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1"
+                        className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-3 px-6 rounded-xl text-center font-semibold hover:from-red-600 hover:to-red-700 transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
                       >
-                        <X className="w-3 h-3" />
-                        Cancel
+                        <X className="w-4 h-4" />
+                        Cancel Subscription
                       </button>
                     ) : (
                       <button
                         onClick={handleReactivateSubscription}
                         disabled={canceling}
-                        className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1 disabled:opacity-50"
+                        className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-3 px-6 rounded-xl text-center font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {canceling ? (
                           <>
-                            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                             Processing...
                           </>
                         ) : (
                           <>
-                            <CheckCircle className="w-3 h-3" />
-                            Reactivate
+                            <CheckCircle className="w-4 h-4" />
+                            Reactivate Subscription
                           </>
                         )}
                       </button>
