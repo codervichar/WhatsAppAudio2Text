@@ -30,18 +30,10 @@ const Signup: React.FC = () => {
   // Password validation function
   const validatePassword = (password: string) => {
     const minLength = 8
-    const hasUpperCase = /[A-Z]/.test(password)
-    const hasLowerCase = /[a-z]/.test(password)
-    const hasNumbers = /\d/.test(password)
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password)
     
     return {
-      isValid: password.length >= minLength && hasUpperCase && hasLowerCase && hasNumbers && hasSpecialChar,
-      minLength: password.length >= minLength,
-      hasUpperCase,
-      hasLowerCase,
-      hasNumbers,
-      hasSpecialChar
+      isValid: password.length >= minLength,
+      minLength: password.length >= minLength
     }
   }
 
@@ -134,7 +126,7 @@ const Signup: React.FC = () => {
 
     // Validate password
     if (!passwordValidation.isValid) {
-      setError('Password must be at least 8 characters long and contain uppercase, lowercase, number, and special character')
+      setError('Password must be at least 8 characters long')
       return
     }
 
@@ -144,22 +136,27 @@ const Signup: React.FC = () => {
       return
     }
 
+    // Validate phone number
+    if (!phoneNumber || phoneNumber.trim() === '') {
+      setError('WhatsApp number is required')
+      return
+    }
+
     setIsLoading(true)
 
     try {
       // Format phone number with country code if provided
-      const formattedPhoneNumber = selectedCountry && phoneNumber 
-        ? `+${selectedCountry.phonecode}${phoneNumber}` 
-        : phoneNumber || undefined
+      // const formattedPhoneNumber = selectedCountry && phoneNumber 
+      //   ? `+${selectedCountry.phonecode}${phoneNumber}` 
+      //   : phoneNumber || undefined
 
       await signup({
         first_name: firstName,
         last_name: lastName,
         email,
-        phone_number: formattedPhoneNumber,
         wtp_number: phoneNumber || undefined, // Store WhatsApp number separately, send undefined if empty
         password,
-        country_id: selectedCountry?.id
+        country_code: selectedCountry?.id // Updated to match backend expectation
       })
       
       // Redirect to welcome page after successful signup
@@ -238,7 +235,7 @@ const Signup: React.FC = () => {
               </div>
             </div>
             <div className="form-group-compact">
-              <label htmlFor="phoneNumber" className="form-label">WhatsApp Number (Optional)</label>
+              <label htmlFor="phoneNumber" className="form-label">WhatsApp Number</label>
               <div className="flex flex-col lg:flex-row gap-3">
                 {/* Country Code Dropdown */}
                 <div className="relative lg:w-24 country-dropdown-container">
@@ -311,7 +308,7 @@ const Signup: React.FC = () => {
                 {/* Hidden input for country ID */}
                 <input
                   type="hidden"
-                  name="country_id"
+                  name="country_code"
                   value={selectedCountry?.id || ''}
                 />
                 {/* Mobile Number Input */}
@@ -326,6 +323,7 @@ const Signup: React.FC = () => {
                       className="form-input input-with-left-icon h-10"
                       placeholder="Enter your phone number"
                       maxLength={15}
+                      required
                       disabled={isLoading}
                     />
                   </div>
@@ -359,26 +357,10 @@ const Signup: React.FC = () => {
               
               {/* Password validation indicators */}
               {password.length > 0 && (
-                <div className="mt-2 space-y-1">
+                <div className="mt-2">
                   <div className={`flex items-center text-xs ${passwordValidation.minLength ? 'text-green-600' : 'text-red-600'}`}>
                     <CheckCircle size={12} className="mr-1" />
                     At least 8 characters
-                  </div>
-                  <div className={`flex items-center text-xs ${passwordValidation.hasUpperCase ? 'text-green-600' : 'text-red-600'}`}>
-                    <CheckCircle size={12} className="mr-1" />
-                    One uppercase letter
-                  </div>
-                  <div className={`flex items-center text-xs ${passwordValidation.hasLowerCase ? 'text-green-600' : 'text-red-600'}`}>
-                    <CheckCircle size={12} className="mr-1" />
-                    One lowercase letter
-                  </div>
-                  <div className={`flex items-center text-xs ${passwordValidation.hasNumbers ? 'text-green-600' : 'text-red-600'}`}>
-                    <CheckCircle size={12} className="mr-1" />
-                    One number
-                  </div>
-                  <div className={`flex items-center text-xs ${passwordValidation.hasSpecialChar ? 'text-green-600' : 'text-red-600'}`}>
-                    <CheckCircle size={12} className="mr-1" />
-                    One special character
                   </div>
                 </div>
               )}

@@ -13,7 +13,7 @@ interface AuthResponse {
     last_name: string;
     name: string; // For backward compatibility
     email: string;
-    phone_number?: string;
+    wtp_number?: string;
     language: string;
     is_premium: boolean;
   };
@@ -25,11 +25,10 @@ interface SignupData {
   first_name: string;
   last_name: string;
   email: string;
-  phone_number?: string;
   wtp_number?: string;
   password: string;
   language?: string;
-  country_id?: number;
+  country_code?: number;
 }
 
 interface LoginData {
@@ -121,8 +120,10 @@ class ApiService {
     first_name?: string;
     last_name?: string;
     email?: string;
-    phone_number?: string;
+    country_code?: number;
     password?: string;
+    wtp_number?: string;
+    wa_language?: number;
   }): Promise<ApiResponse<any>> {
     return this.request<any>('/users/profile', {
       method: 'PUT',
@@ -138,7 +139,15 @@ class ApiService {
     return this.request<any>('/users/languages', { method: 'GET' });
   }
 
-  async updateWhatsAppTranscript(data: { country_code: number; wtp_number?: string; wa_language: number }): Promise<ApiResponse<any>> {
+  async updateWhatsAppTranscript(data: { 
+    country_code?: number; 
+    wtp_number?: string; 
+    wa_language?: number;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    password?: string;
+  }): Promise<ApiResponse<any>> {
     const accessToken = localStorage.getItem('accessToken');
     const response = await fetch(`${API_BASE_URL}/users/update-profile`, {
       method: 'POST',

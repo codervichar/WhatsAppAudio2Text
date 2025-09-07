@@ -1,27 +1,18 @@
 import React, { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { FileText, CreditCard, Settings, ChevronDown, Search, MessageCircle, Upload, Zap, Star, Users, Clock, CheckCircle, TrendingUp, Shield, Globe, X } from 'lucide-react'
+import { FileText, CreditCard, Settings, ChevronDown, Search, MessageCircle, Zap, Star, CheckCircle, Shield, Globe, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 import waQr from '../assets/wa_qr.png';
 
 
-const languages = [
-  { code: 'en', label: 'English' },
-  { code: 'hi', label: 'Hindi' },
-  { code: 'es', label: 'Spanish' },
-  // Add more as needed
-];
 
 const Dashboard: React.FC = () => {
-  const { user } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   // WhatsApp Transcript state
-  const [waCountry, setWaCountry] = useState('');
   const [waNumber, setWaNumber] = useState('');
   const [waLang, setWaLang] = useState<string | number>('');
   const [waAlert, setWaAlert] = useState(false);
@@ -60,12 +51,12 @@ const Dashboard: React.FC = () => {
         setCountryOptions(data.data);
         // Set US as default country for WhatsApp
         const usCountry = data.data.find((country: { code?: string }) => country.code === 'US');
-        setWaCountry(usCountry ? usCountry.code : data.data[0].code);
+        setSelectedCountry(usCountry || data.data[0]);
       }
     }).catch(error => {
       console.error('Failed to fetch countries:', error);
     });
-    
+
     // Fetch languages
     apiService.getLanguages().then(data => {
       if (data.success && data.data.length > 0) {
@@ -131,12 +122,12 @@ const Dashboard: React.FC = () => {
     try {
       setCanceling(true);
       const response = await apiService.cancelSubscription();
-      
+
       if (response.success) {
         setShowCancelConfirm(false);
-        setNotification({ 
-          message: 'Your subscription has been scheduled for cancellation at the end of the current billing period. You will continue to have access to Pro features until then.', 
-          type: 'success' 
+        setNotification({
+          message: 'Your subscription has been scheduled for cancellation at the end of the current billing period. You will continue to have access to Pro features until then.',
+          type: 'success'
         });
         // Refresh profile data to update subscription status
         await fetchProfile();
@@ -154,11 +145,11 @@ const Dashboard: React.FC = () => {
     try {
       setCanceling(true);
       const response = await apiService.reactivateSubscription();
-      
+
       if (response.success) {
-        setNotification({ 
-          message: 'Your subscription has been reactivated successfully!', 
-          type: 'success' 
+        setNotification({
+          message: 'Your subscription has been reactivated successfully!',
+          type: 'success'
         });
         // Refresh profile data to update subscription status
         await fetchProfile();
@@ -208,6 +199,22 @@ const Dashboard: React.FC = () => {
     };
   }, []);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (isCountryDropdownOpen && !target.closest('.country-dropdown-container')) {
+        setIsCountryDropdownOpen(false);
+        setHighlightedIndex(-1);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isCountryDropdownOpen]);
+
   if (loading) {
     return <div className="flex justify-center items-center min-h-[40vh]">Loading...</div>;
   }
@@ -227,13 +234,13 @@ const Dashboard: React.FC = () => {
   const subscriptionStatus = profile?.subscription?.status;
   const isCanceling = subscriptionStatus === 'canceling' || subscriptionStatus === 'canceled';
   const currentPeriodEnd = profile?.subscription?.current_period_end;
-  
+
   if (plan === 'pro' || plan === 'monthly') {
     if (isCanceling && currentPeriodEnd) {
-      const endDate = new Date(currentPeriodEnd).toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric' 
+      const endDate = new Date(currentPeriodEnd).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
       });
       planLabel = `Monthly Paid (${subscriptionMinutes} min) - Canceling on ${endDate}`;
     } else {
@@ -255,7 +262,6 @@ const Dashboard: React.FC = () => {
   // Handle country select
   const handleCountrySelect = (country: { id: number; code: string; label: string; phonecode?: string; iso?: string }) => {
     setSelectedCountry(country);
-    setWaCountry(country.phonecode || '');
     setCountrySearchTerm('');
     setIsCountryDropdownOpen(false);
     setHighlightedIndex(-1);
@@ -304,7 +310,7 @@ const Dashboard: React.FC = () => {
           <span className="font-medium">{notification.message}</span>
         </div>
       )}
-      
+
       <Helmet>
         <title>Dashboard - WhatsApp2Text</title>
         <meta name="description" content="Manage your WhatsApp2Text account, view your transcriptions, and update your subscription." />
@@ -329,358 +335,414 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* WhatsApp Transcript Section */}
-      <section className="relative bg-gradient-to-br from-white to-gray-50 py-8">
-        <div className="compact-container mb-8">
-        <div className="flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto">
-          {/* Left: Form */}
-          <form className="flex-1 bg-white rounded-xl shadow-lg p-6 flex flex-col gap-4 border border-gray-100" onSubmit={handleWaSave}>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center">
-                <MessageCircle className="w-4 h-4 text-white" />
+      {/* WhatsApp QR Code Section */}
+      <section className="relative bg-gradient-to-br from-green-50 via-white to-blue-50 py-12">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto">
+            {/* Section Header */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-3 bg-white px-6 py-3 rounded-full shadow-lg border border-green-100 mb-4">
+                <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center">
+                  <MessageCircle className="w-4 h-4 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">WhatsApp Integration</h2>
+                <span className="px-3 py-1 bg-gradient-to-r from-green-500 to-blue-500 text-white text-xs font-bold rounded-full">BETA</span>
               </div>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">WhatsApp Transcript</h2>
-                <p className="text-gray-500 text-xs">Configure your WhatsApp integration</p>
-              </div>
-              <span className="ml-auto px-2 py-0.5 text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-full">BETA</span>
+              <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+                Connect with our WhatsApp bot to send audio messages for instant transcription
+              </p>
             </div>
-            
-            {waAlert && (
-              <div className="p-3 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg flex items-center">
-                <svg className="w-4 h-4 mr-2 text-yellow-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12A9 9 0 11 3 12a9 9 0 0118 0z" /></svg>
-                <span className="text-yellow-800 font-medium text-sm">Please make sure you have entered valid WhatsApp number.</span>
-              </div>
-            )}
-          
-            <div>
-              <label className="block font-semibold text-gray-700 mb-2 text-sm">WhatsApp Number</label>
-              <div className="flex flex-col lg:flex-row gap-3">
-                {/* Searchable Country Dropdown */}
-                                 <div className="relative lg:w-24">
-                   <button
-                     type="button"
-                     onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                     className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 text-sm h-10"
-                   >
-                                         <span className="text-left text-gray-700 font-medium">
-                       {selectedCountry ? `+${selectedCountry.phonecode} ${selectedCountry.iso}` : 'Select Country'}
-                     </span>
-                    <ChevronDown size={16} className="text-gray-400" />
-                  </button>
-                  
-                  {isCountryDropdownOpen && (
-                    <div className="absolute z-[9999] w-64 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-hidden transform -translate-x-1/2 left-1/2">
-                      {/* Search Input */}
-                      <div className="p-2 border-b border-gray-100 bg-gray-50">
-                        <div className="relative">
-                          <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                          <input
-                            type="text"
-                            placeholder="Search countries..."
-                            value={countrySearchTerm}
-                            onChange={(e) => {
-                              setCountrySearchTerm(e.target.value);
-                              setHighlightedIndex(-1);
-                            }}
-                            onKeyDown={handleKeyDown}
-                            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs bg-white"
-                            autoFocus
-                          />
-                        </div>
-                      </div>
-                      {/* Country List */}
-                      <div className="max-h-36 overflow-y-auto custom-scrollbar">
-                        {filteredCountries.length > 0 ? (
-                          filteredCountries.map((country, index) => (
-                            <button
-                              key={country.code}
-                              type="button"
-                              onClick={() => handleCountrySelect(country)}
-                              className={`w-full text-left px-2 py-1.5 focus:outline-none text-xs transition-colors border-b border-gray-50 last:border-b-0 ${
-                                index === highlightedIndex
-                                  ? 'bg-blue-50 text-blue-900'
-                                  : 'hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                                                 <div className="flex items-center space-x-2">
-                                   <span className="font-semibold text-gray-900">+{country.phonecode} {country.iso}</span>
-                                   <span className="text-xs text-gray-600 truncate">{country.label}</span>
-                                 </div>
-                                {selectedCountry?.code === country.code && (
-                                  <CheckCircle size={12} className="text-blue-600 flex-shrink-0" />
-                                )}
-                              </div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="px-2 py-3 text-center text-gray-500 text-xs">
-                            <Search size={16} className="mx-auto mb-1 text-gray-300" />
-                            No countries found
-                          </div>
-                        )}
-                      </div>
+
+            {/* Main Content Card */}
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
+                {/* Left: QR Code */}
+                <div className="flex flex-col items-center justify-center space-y-6">
+                  <div className="text-center">
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">WhatsApp Number</h3>
+                    <p className="text-gray-600">Save this number to your contacts</p>
+                  </div>
+
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-green-600 bg-green-50 px-6 py-4 rounded-2xl border-2 border-green-200 shadow-lg">
+                      +1 (813) 896-3315
                     </div>
-                  )}
+                    <p className="text-sm text-gray-500 mt-3">OR scan the QR code below</p>
+                  </div>
+
+                  <div className="relative">
+                    <div className="bg-gradient-to-br from-gray-50 to-white p-6 rounded-2xl border-2 border-gray-200 shadow-lg">
+                      <img src={waQr} alt="WhatsApp QR Code" className="w-48 h-48 rounded-xl" />
+                    </div>
+                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                      <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
+                    </div>
+                  </div>
                 </div>
 
-                                                  <div className="flex-1">
-                   <div className="relative">
-                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                       <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                       </svg>
-                     </div>
-                     <input
-                       id="waNumber"
-                       type="text"
-                       value={waNumber}
-                       onChange={e => setWaNumber(e.target.value.replace(/\D/g, ''))}
-                       className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm font-medium hover:border-gray-300 h-10"
-                       placeholder="Enter mobile number (without country code)"
-                       maxLength={15}
-                     />
-                   </div>
-                 </div>
+                {/* Right: Instructions & Actions */}
+                <div className="flex flex-col justify-center space-y-6">
+                  <div className="space-y-4">
+                    <h3 className="text-2xl font-bold text-gray-900">How it works</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-green-600 font-bold text-sm">1</span>
+                        </div>
+                        <p className="text-gray-700">Scan the QR code or save the number to your contacts</p>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-green-600 font-bold text-sm">2</span>
+                        </div>
+                        <p className="text-gray-700">Send audio or video messages to our WhatsApp bot</p>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-green-600 font-bold text-sm">3</span>
+                        </div>
+                        <p className="text-gray-700">Get instant text transcriptions on whatsapp and you can see on your dashboard</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <a
+                      href="https://wa.me/18138963315"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold shadow-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105"
+                    >
+                      <MessageCircle className="w-5 h-5" />
+                      Open in WhatsApp
+                    </a>
+
+                    <div className="flex items-center gap-2 text-blue-600 bg-blue-50 px-4 py-3 rounded-xl border border-blue-200">
+                      <Shield className="w-4 h-4" />
+                      <span className="text-sm font-medium">File size limit: 16 MB (WhatsApp limitation)</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            
-            <div>
-              <label className="block font-semibold text-gray-700 mb-2 text-sm">Expected Transcript Language</label>
-              <select 
-                value={waLang} 
-                onChange={e => setWaLang(Number(e.target.value))} 
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm font-medium hover:border-gray-300"
-              >
-                <option value="">Select Language</option>
-                {languageOptions.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
-              </select>
-            </div>
-            
-            <button 
-              type="submit" 
-              className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2.5 rounded-lg font-semibold text-sm shadow-md hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-100 mt-2"
-            >
-              Save & Update Configuration
-            </button>
-          </form>
-        
-        {/* Right: QR Code */}
-        <div className="flex-1 bg-white rounded-xl p-6 flex flex-col items-center border border-gray-100 shadow-lg">
-          <div className="text-center mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center mb-3 mx-auto shadow-md">
-              <Upload className="w-6 h-6 text-white" />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Scan QR Code</h3>
-            <p className="text-gray-600 text-sm">Send audio messages through WhatsApp for transcription</p>
-          </div>
-          
-          {/* WhatsApp Number Display */}
-          <div className="text-center mb-6">
-            <p className="text-sm text-gray-600 mb-2">WhatsApp Number:</p>
-            <div className="text-3xl font-bold text-green-600 bg-green-50 px-4 py-2 rounded-lg border border-green-200 mb-3">
-              +1 (813) 896-3315
-            </div>
-            <div className="text-lg font-semibold text-gray-700">
-              OR
-            </div>
-            <div className="text-lg font-semibold text-gray-700 mt-1">
-              scan QR code
-            </div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-gray-50 to-white p-4 rounded-lg border border-gray-200 mb-4 shadow-md">
-            <img src={waQr} alt="WhatsApp QR Code" className="w-40 h-40 rounded-lg shadow-md" />
-          </div>
-          
-          <a 
-            href="https://wa.me/18138963315" 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg shadow-md hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105 font-semibold text-sm"
-          >
-            <MessageCircle className="w-4 h-4" />
-            Open in WhatsApp
-          </a>
-          
-          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <div className="flex items-center gap-2 text-blue-700">
-              <Shield className="w-4 h-4" />
-              <span className="font-medium text-xs">File size limit: 16 MB (WhatsApp limitation)</span>
             </div>
           </div>
         </div>
+      </section>
+
+      {/* WhatsApp Configuration Section */}
+      <section className="relative bg-gradient-to-br from-blue-50 via-white to-purple-50 py-12">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto">
+            {/* Section Header */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-3 bg-white px-6 py-3 rounded-full shadow-lg border border-blue-100 mb-4">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                  <Settings className="w-4 h-4 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">WhatsApp Configuration</h2>
+                <span className="px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs font-bold rounded-full">BETA</span>
               </div>
+              <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+                Configure your WhatsApp number and language preferences for personalized transcriptions
+              </p>
+            </div>
+
+            {/* Configuration Form */}
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+              <form className="p-8 space-y-6" onSubmit={handleWaSave}>
+                {waAlert && (
+                  <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl flex items-center">
+                    <svg className="w-5 h-5 mr-3 text-yellow-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12A9 9 0 11 3 12a9 9 0 0118 0z" /></svg>
+                    <span className="text-yellow-800 font-medium">Please make sure you have entered valid WhatsApp number.</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-gray-700 text-sm">WhatsApp Number</label>
+                    <div className="flex gap-3">
+                      {/* Searchable Country Dropdown */}
+                      <div className="relative lg:w-32 country-dropdown-container">
+                        <button
+                          type="button"
+                          onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                          className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 hover:bg-gray-50 font-medium h-12 shadow-sm"
+                        >
+                          <span className="text-left text-gray-700 font-medium text-sm">
+                            {selectedCountry ? `+${selectedCountry.phonecode} ${selectedCountry.iso}` : 'Select Country'}
+                          </span>
+                          <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 ${isCountryDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {isCountryDropdownOpen && (
+                          <div className="absolute z-[9999] w-80 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-64 overflow-hidden left-0 top-full">
+                            {/* Search Input */}
+                            <div className="p-3 border-b border-gray-100 bg-gray-50">
+                              <div className="relative">
+                                <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search countries..."
+                                  value={countrySearchTerm}
+                                  onChange={(e) => {
+                                    setCountrySearchTerm(e.target.value);
+                                    setHighlightedIndex(-1);
+                                  }}
+                                  onKeyDown={handleKeyDown}
+                                  className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                                  autoFocus
+                                />
+                              </div>
+                            </div>
+                            {/* Country List */}
+                            <div className="max-h-48 overflow-y-auto">
+                              {filteredCountries.length > 0 ? (
+                                filteredCountries.map((country, index) => (
+                                  <button
+                                    key={country.code}
+                                    type="button"
+                                    onClick={() => handleCountrySelect(country)}
+                                    className={`w-full text-left px-3 py-2.5 focus:outline-none text-sm transition-colors border-b border-gray-50 last:border-b-0 ${
+                                      index === highlightedIndex
+                                        ? 'bg-blue-50 text-blue-900'
+                                        : 'hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-3">
+                                        <span className="font-semibold text-gray-900 text-sm">+{country.phonecode} {country.iso}</span>
+                                        <span className="text-sm text-gray-600 truncate">{country.label}</span>
+                                      </div>
+                                      {selectedCountry?.code === country.code && (
+                                        <CheckCircle size={14} className="text-blue-600 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="px-3 py-4 text-center text-gray-500 text-sm">
+                                  <Search size={20} className="mx-auto mb-2 text-gray-300" />
+                                  No countries found
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                       <div className="flex-1">
+                         <div className="relative">
+                           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                             <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                               <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                             </svg>
+                           </div>
+                           <input
+                             id="waNumber"
+                             type="text"
+                             value={waNumber}
+                             onChange={e => setWaNumber(e.target.value.replace(/\D/g, ''))}
+                             className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 font-medium hover:border-gray-300 h-12"
+                             placeholder="Enter mobile number (without country code)"
+                             maxLength={15}
+                           />
+                         </div>
+                       </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-gray-700 text-sm">Expected Transcript Language</label>
+                    <select
+                      value={waLang}
+                      onChange={e => setWaLang(Number(e.target.value))}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 font-medium hover:border-gray-300 h-12"
+                    >
+                      <option value="">Select Language</option>
+                      {languageOptions.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-4 rounded-xl font-semibold text-lg shadow-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  >
+                    Save & Update Configuration
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       </section>
 
       {/* Quick Actions Section */}
       <section className="relative bg-gradient-to-br from-gray-50 to-white py-20">
         <div className="container mx-auto px-4 mb-20">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-gray-900 mb-6">Quick Actions</h2>
-          <p className="text-gray-600 max-w-3xl mx-auto text-lg">Manage your account, view transcriptions, and upgrade your subscription</p>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 max-w-7xl mx-auto">
-          {/* Transcriptions Card */}
-          <div className="bg-white rounded-3xl shadow-2xl p-8 flex flex-col items-center border border-gray-100 transform hover:scale-105 transition-all duration-300">
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mb-6">
-              <FileText className="w-8 h-8 text-white" />
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Transcriptions</h3>
-            <div className="text-center mb-6">
-              <p className="text-gray-600 mb-2">Minutes remaining this month</p>
-              <div className="text-3xl font-bold text-blue-600">{minutesLeft}</div>
-            </div>
-            <Link 
-              to="/transcription-history" 
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-6 rounded-2xl text-center font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
-            >
-              View History
-            </Link>
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold text-gray-900 mb-6">Quick Actions</h2>
+            <p className="text-gray-600 max-w-3xl mx-auto text-lg">Manage your account, view transcriptions, and upgrade your subscription</p>
           </div>
-          
-          {/* Subscription Card */}
-          <div className="bg-white rounded-3xl shadow-2xl p-8 flex flex-col items-center border border-gray-100 transform hover:scale-105 transition-all duration-300">
-            <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mb-6">
-              <CreditCard className="w-8 h-8 text-white" />
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 max-w-7xl mx-auto">
+            {/* Transcriptions Card */}
+            <div className="bg-white rounded-3xl shadow-2xl p-8 flex flex-col items-center border border-gray-100 transform hover:scale-105 transition-all duration-300">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mb-6">
+                <FileText className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">Transcriptions</h3>
+              <div className="text-center mb-6">
+                <p className="text-gray-600 mb-2">Minutes remaining this month</p>
+                <div className="text-3xl font-bold text-blue-600">{minutesLeft}</div>
+              </div>
+              <Link
+                to="/transcription-history"
+                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-6 rounded-2xl text-center font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
+              >
+                View History
+              </Link>
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Subscription</h3>
-            <div className="text-center mb-6">
-              <p className="text-gray-600 mb-2">Current Plan</p>
-              <div className="text-lg font-bold text-purple-600">{planLabel}</div>
-              {isCanceling && currentPeriodEnd && (
-                <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-xs text-yellow-800">
-                    <strong>Note:</strong> Your subscription will remain active until {new Date(currentPeriodEnd).toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })}
-                  </p>
+
+            {/* Subscription Card */}
+            <div className="bg-white rounded-3xl shadow-2xl p-8 flex flex-col items-center border border-gray-100 transform hover:scale-105 transition-all duration-300">
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mb-6">
+                <CreditCard className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">Subscription</h3>
+              <div className="text-center mb-6">
+                <p className="text-gray-600 mb-2">Current Plan</p>
+                <div className="text-lg font-bold text-purple-600">{planLabel}</div>
+                {isCanceling && currentPeriodEnd && (
+                  <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-xs text-yellow-800">
+                      <strong>Note:</strong> Your subscription will remain active until {new Date(currentPeriodEnd).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {plan === 'free' ? (
+                <Link
+                  to="/pricing"
+                  className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white py-3 px-6 rounded-2xl text-center font-semibold hover:from-purple-600 hover:to-purple-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
+                >
+                  Upgrade to Pro
+                </Link>
+              ) : (
+                <div className="w-full space-y-3">
+                  <div className={`w-full text-white py-3 px-6 rounded-2xl text-center font-semibold ${isCanceling
+                      ? 'bg-gradient-to-r from-yellow-500 to-yellow-600'
+                      : 'bg-gradient-to-r from-green-500 to-green-600'
+                    }`}>
+                    {isCanceling ? 'Pro Plan - Canceling' : 'Pro Plan Active'}
+                  </div>
+                  <div className="flex gap-2">
+                    <Link
+                      to="/subscription-management"
+                      className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm"
+                    >
+                      Manage
+                    </Link>
+                    {!isCanceling ? (
+                      <button
+                        onClick={() => setShowCancelConfirm(true)}
+                        className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-red-600 hover:to-red-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1"
+                      >
+                        <X className="w-3 h-3" />
+                        Cancel
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleReactivateSubscription}
+                        disabled={canceling}
+                        className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1 disabled:opacity-50"
+                      >
+                        {canceling ? (
+                          <>
+                            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="w-3 h-3" />
+                            Reactivate
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-            {plan === 'free' ? (
-              <Link 
-                to="/pricing" 
-                className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white py-3 px-6 rounded-2xl text-center font-semibold hover:from-purple-600 hover:to-purple-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
-              >
-                Upgrade to Pro
-              </Link>
-            ) : (
-              <div className="w-full space-y-3">
-                <div className={`w-full text-white py-3 px-6 rounded-2xl text-center font-semibold ${
-                  isCanceling 
-                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' 
-                    : 'bg-gradient-to-r from-green-500 to-green-600'
-                }`}>
-                  {isCanceling ? 'Pro Plan - Canceling' : 'Pro Plan Active'}
-                </div>
-                <div className="flex gap-2">
-                  <Link 
-                    to="/subscription-management" 
-                    className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm"
-                  >
-                    Manage
-                  </Link>
-                  {!isCanceling ? (
-                    <button
-                      onClick={() => setShowCancelConfirm(true)}
-                      className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-red-600 hover:to-red-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1"
-                    >
-                      <X className="w-3 h-3" />
-                      Cancel
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleReactivateSubscription}
-                      disabled={canceling}
-                      className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-xl text-center font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:scale-105 shadow-lg text-sm flex items-center justify-center gap-1 disabled:opacity-50"
-                    >
-                      {canceling ? (
-                        <>
-                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle className="w-3 h-3" />
-                          Reactivate
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
+
+            {/* Account Settings Card */}
+            <div className="bg-white rounded-3xl shadow-2xl p-8 flex flex-col items-center border border-gray-100 transform hover:scale-105 transition-all duration-300">
+              <div className="w-16 h-16 bg-gradient-to-br from-gray-500 to-gray-600 rounded-2xl flex items-center justify-center mb-6">
+                <Settings className="w-8 h-8 text-white" />
               </div>
-            )}
-          </div>
-          
-          {/* Account Settings Card */}
-          <div className="bg-white rounded-3xl shadow-2xl p-8 flex flex-col items-center border border-gray-100 transform hover:scale-105 transition-all duration-300">
-            <div className="w-16 h-16 bg-gradient-to-br from-gray-500 to-gray-600 rounded-2xl flex items-center justify-center mb-6">
-              <Settings className="w-8 h-8 text-white" />
+              <h3 className="text-xl font-bold text-gray-900 mb-3">Account Settings</h3>
+              <div className="text-center mb-6">
+                <p className="text-gray-600 mb-2">Email Address</p>
+                <div className="text-sm font-medium text-gray-900 break-all">{userEmail}</div>
+              </div>
+              <Link
+                to="/update-profile"
+                className="w-full bg-gradient-to-r from-gray-500 to-gray-600 text-white py-3 px-6 rounded-2xl text-center font-semibold hover:from-gray-600 hover:to-gray-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
+              >
+                Update Profile
+              </Link>
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Account Settings</h3>
-            <div className="text-center mb-6">
-              <p className="text-gray-600 mb-2">Email Address</p>
-              <div className="text-sm font-medium text-gray-900 break-all">{userEmail}</div>
-            </div>
-            <Link 
-              to="/update-profile" 
-              className="w-full bg-gradient-to-r from-gray-500 to-gray-600 text-white py-3 px-6 rounded-2xl text-center font-semibold hover:from-gray-600 hover:to-gray-700 transition-all duration-300 transform hover:scale-105 shadow-lg"
-            >
-              Update Profile
-            </Link>
           </div>
-        </div>
         </div>
       </section>
 
       {/* Features Section */}
       <section className="relative bg-gradient-to-br from-white to-gray-50 py-20">
         <div className="container mx-auto px-4 mb-16">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">Why Choose WhatsApp2Text?</h2>
-          <p className="text-gray-600 max-w-2xl mx-auto">Advanced AI-powered transcription with high accuracy and fast processing</p>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
-          <div className="bg-white rounded-2xl p-6 text-center border border-gray-100 shadow-lg">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <Zap className="w-6 h-6 text-white" />
-            </div>
-            <h3 className="font-bold text-gray-900 mb-2">Fast Processing</h3>
-            <p className="text-gray-600 text-sm">Get transcriptions in seconds with our optimized AI</p>
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Why Choose WhatsApp2Text?</h2>
+            <p className="text-gray-600 max-w-2xl mx-auto">Advanced AI-powered transcription with high accuracy and fast processing</p>
           </div>
-          
-          <div className="bg-white rounded-2xl p-6 text-center border border-gray-100 shadow-lg">
-            <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-6 h-6 text-white" />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
+            <div className="bg-white rounded-2xl p-6 text-center border border-gray-100 shadow-lg">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <Zap className="w-6 h-6 text-white" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">Fast Processing</h3>
+              <p className="text-gray-600 text-sm">Get transcriptions in seconds with our optimized AI</p>
             </div>
-            <h3 className="font-bold text-gray-900 mb-2">High Accuracy</h3>
-            <p className="text-gray-600 text-sm">Advanced speech recognition with 95%+ accuracy</p>
-          </div>
-          
-          <div className="bg-white rounded-2xl p-6 text-center border border-gray-100 shadow-lg">
-            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <Globe className="w-6 h-6 text-white" />
+
+            <div className="bg-white rounded-2xl p-6 text-center border border-gray-100 shadow-lg">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-6 h-6 text-white" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">High Accuracy</h3>
+              <p className="text-gray-600 text-sm">Advanced speech recognition with 95%+ accuracy</p>
             </div>
-            <h3 className="font-bold text-gray-900 mb-2">Multi-Language</h3>
-            <p className="text-gray-600 text-sm">Support for 50+ languages and dialects</p>
-          </div>
-          
-          <div className="bg-white rounded-2xl p-6 text-center border border-gray-100 shadow-lg">
-            <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-6 h-6 text-white" />
+
+            <div className="bg-white rounded-2xl p-6 text-center border border-gray-100 shadow-lg">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <Globe className="w-6 h-6 text-white" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">Multi-Language</h3>
+              <p className="text-gray-600 text-sm">Support for 50+ languages and dialects</p>
             </div>
-            <h3 className="font-bold text-gray-900 mb-2">Secure & Private</h3>
-            <p className="text-gray-600 text-sm">Your data is encrypted and never shared</p>
+
+            <div className="bg-white rounded-2xl p-6 text-center border border-gray-100 shadow-lg">
+              <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">Secure & Private</h3>
+              <p className="text-gray-600 text-sm">Your data is encrypted and never shared</p>
+            </div>
           </div>
-        </div>
         </div>
       </section>
 

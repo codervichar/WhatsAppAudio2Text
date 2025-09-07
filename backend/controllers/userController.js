@@ -12,7 +12,7 @@ const getProfile = async (req, res) => {
 
     const [users] = await pool.execute(
       `SELECT 
-         u.id, u.first_name, u.last_name, u.email, u.phone_number, u.country_code, u.wtp_number, u.wa_language,
+         u.id, u.first_name, u.last_name, u.email,  u.country_code, u.wtp_number, u.wa_language,
          u.is_subscribed, u.total_minutes, u.used_minutes,
          u.created_at, u.updated_at,
          s.plan, s.type, s.subscription_minutes, s.used_minutes as sub_used_minutes, s.status
@@ -59,7 +59,6 @@ const getProfile = async (req, res) => {
           last_name: user.last_name,
           name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
           email: user.email,
-          phone_number: user.phone_number,
           country_code: user.country_code,
           wtp_number: user.wtp_number,
           wa_language: user.wa_language,
@@ -93,7 +92,7 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { first_name, last_name, email, phone_number, country_code, password } = req.body;
+    const { first_name, last_name, email, country_code, password, wtp_number, wa_language } = req.body;
 
     // Build dynamic update query
     const updateFields = [];
@@ -124,13 +123,17 @@ const updateProfile = async (req, res) => {
       updateFields.push('email = ?');
       updateValues.push(email);
     }
-    if (phone_number !== undefined) {
-      updateFields.push('phone_number = ?');
-      updateValues.push(phone_number);
-    }
     if (country_code !== undefined) {
       updateFields.push('country_code = ?');
       updateValues.push(country_code);
+    }
+    if (wtp_number !== undefined) {
+      updateFields.push('wtp_number = ?');
+      updateValues.push(wtp_number || null);
+    }
+    if (wa_language !== undefined) {
+      updateFields.push('wa_language = ?');
+      updateValues.push(wa_language);
     }
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -155,7 +158,7 @@ const updateProfile = async (req, res) => {
     // Get updated user data
     const [users] = await pool.execute(
       `SELECT 
-         u.id, u.first_name, u.last_name, u.email, u.phone_number, u.country_code, u.wtp_number, u.wa_language,
+         u.id, u.first_name, u.last_name, u.email,  u.country_code, u.wtp_number, u.wa_language,
          u.is_subscribed, u.total_minutes, u.used_minutes,
          u.created_at, u.updated_at,
          s.plan, s.type, s.subscription_minutes, s.used_minutes as sub_used_minutes, s.status
@@ -203,7 +206,6 @@ const updateProfile = async (req, res) => {
           last_name: user.last_name,
           name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
           email: user.email,
-          phone_number: user.phone_number,
           country_code: user.country_code,
           wtp_number: user.wtp_number,
           wa_language: user.wa_language,
@@ -350,7 +352,7 @@ const getCountries = async (req, res) => {
 const updateWhatsAppTranscript = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, phone_number, password, country_code, wtp_number, wa_language } = req.body;
+    const { name, first_name, last_name, email, password, country_code, wtp_number, wa_language } = req.body;
 
     // Build dynamic update query
     const updateFields = [];
@@ -360,9 +362,30 @@ const updateWhatsAppTranscript = async (req, res) => {
       updateFields.push('name = ?');
       updateValues.push(name);
     }
-    if (phone_number !== undefined) {
-      updateFields.push('phone_number = ?');
-      updateValues.push(phone_number);
+    if (first_name !== undefined) {
+      updateFields.push('first_name = ?');
+      updateValues.push(first_name);
+    }
+    if (last_name !== undefined) {
+      updateFields.push('last_name = ?');
+      updateValues.push(last_name);
+    }
+    if (email !== undefined) {
+      // Check if email is already taken by another user
+      const [existingUser] = await pool.execute(
+        'SELECT id FROM users WHERE email = ? AND id != ?',
+        [email, userId]
+      );
+      
+      if (existingUser.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email is already taken'
+        });
+      }
+      
+      updateFields.push('email = ?');
+      updateValues.push(email);
     }
     if (country_code !== undefined) {
       updateFields.push('country_code = ?');

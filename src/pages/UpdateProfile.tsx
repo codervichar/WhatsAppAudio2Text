@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { User, Mail, Phone, ArrowLeft, ChevronDown, Search, CheckCircle } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { Link } from 'react-router-dom'
+// import { useAuth } from '../context/AuthContext'
 import { apiService } from '../services/api'
 
 const UpdateProfile: React.FC = () => {
-  const { user, loading } = useAuth()
-  const navigate = useNavigate()
+  // const { user, loading } = useAuth()
+  // const navigate = useNavigate()
+  const loading = false
   
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
+  const [expectedLanguage, setExpectedLanguage] = useState<string | number>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -24,6 +26,9 @@ const UpdateProfile: React.FC = () => {
   const [countrySearchTerm, setCountrySearchTerm] = useState('')
   const [selectedCountry, setSelectedCountry] = useState<{ id: number; code: string; label: string; phonecode?: string; iso?: string } | null>(null)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
+
+  // Language options state
+  const [languageOptions, setLanguageOptions] = useState<{ id: number; code: string; label: string }[]>([])
 
   // Load user data and countries on component mount
   useEffect(() => {
@@ -38,17 +43,14 @@ const UpdateProfile: React.FC = () => {
            setLastName(profileData.last_name || '')
            setEmail(profileData.email || '')
            
+           // Set expected language
+           if (profileData.wa_language) {
+             setExpectedLanguage(profileData.wa_language);
+           }
+           
                        // Use wtp_number for WhatsApp number field
             if (profileData.wtp_number) {
               let phoneNum = profileData.wtp_number;
-              if (phoneNum.startsWith('+')) {
-                // Remove the + and country code, keep only the number
-                phoneNum = phoneNum.replace(/^\+[0-9]+/, '');
-              }
-              setPhoneNumber(phoneNum);
-            } else {
-              // Fallback to phone_number if wtp_number is not available
-              let phoneNum = profileData.phone_number || '';
               if (phoneNum.startsWith('+')) {
                 // Remove the + and country code, keep only the number
                 phoneNum = phoneNum.replace(/^\+[0-9]+/, '');
@@ -64,16 +66,22 @@ const UpdateProfile: React.FC = () => {
       }
     }
 
-    // Fetch countries first, then profile
-    apiService.getCountries().then(data => {
-      if (data.success && data.data.length > 0) {
-        setCountryOptions(data.data)
-        // After countries are loaded, fetch profile
-        fetchProfile()
+    // Fetch countries and languages first, then profile
+    Promise.all([
+      apiService.getCountries(),
+      apiService.getLanguages()
+    ]).then(([countriesData, languagesData]) => {
+      if (countriesData.success && countriesData.data.length > 0) {
+        setCountryOptions(countriesData.data)
       }
+      if (languagesData.success && languagesData.data.length > 0) {
+        setLanguageOptions(languagesData.data)
+      }
+      // After both are loaded, fetch profile
+      fetchProfile()
     }).catch(error => {
-      console.error('Failed to fetch countries:', error)
-      setError('Failed to load countries')
+      console.error('Failed to fetch countries or languages:', error)
+      setError('Failed to load countries or languages')
       setProfileLoading(false)
     })
   }, [])
@@ -145,11 +153,18 @@ const UpdateProfile: React.FC = () => {
 
     const updateData: any = {}
     
+    // Only include fields that have values
     if (firstName.trim()) updateData.first_name = firstName.trim()
     if (lastName.trim()) updateData.last_name = lastName.trim()
     if (email.trim()) updateData.email = email.trim()
-    if (phoneNumber.trim()) updateData.phone_number = phoneNumber.trim()
+    
+    // Store only the numeric part of WhatsApp number
+    if (phoneNumber.trim()) {
+      updateData.wtp_number = phoneNumber.trim()
+    }
+    
     if (selectedCountry?.id) updateData.country_code = selectedCountry.id
+    if (expectedLanguage) updateData.wa_language = expectedLanguage
 
     if (Object.keys(updateData).length === 0) {
       setError('Please make at least one change to update your profile')
@@ -158,7 +173,7 @@ const UpdateProfile: React.FC = () => {
     }
 
     try {
-      const response = await apiService.updateProfile(updateData)
+      const response = await apiService.updateWhatsAppTranscript(updateData)
       
       if (response.success) {
         setSuccess(response.message || 'Profile updated successfully!')
@@ -240,7 +255,6 @@ const UpdateProfile: React.FC = () => {
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                  required
                 />
               </div>
             </div>
@@ -257,7 +271,6 @@ const UpdateProfile: React.FC = () => {
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                  required
                 />
               </div>
             </div>
@@ -274,7 +287,6 @@ const UpdateProfile: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                  required
                 />
               </div>
             </div>
@@ -367,6 +379,25 @@ const UpdateProfile: React.FC = () => {
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="expectedLanguage" className="block text-sm font-medium text-gray-700">Expected Transcript Language</label>
+              <div className="mt-1">
+                <select
+                  id="expectedLanguage"
+                  value={expectedLanguage}
+                  onChange={(e) => setExpectedLanguage(e.target.value ? Number(e.target.value) : '')}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md leading-5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select Language</option>
+                  {languageOptions.map(language => (
+                    <option key={language.id} value={language.id}>
+                      {language.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 

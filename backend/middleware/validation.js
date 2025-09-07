@@ -6,8 +6,9 @@ const validateRegistration = (req, res, next) => {
     first_name: Joi.string().min(2).max(50).required(),
     last_name: Joi.string().min(2).max(50).required(),
     email: Joi.string().email().required(),
-    phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).allow('').optional(),
-    wtp_number: Joi.string().pattern(/^[0-9]{7,15}$/).allow('').optional(),
+    wtp_number: Joi.string().pattern(/^[0-9]{7,15}$/).allow('').optional().messages({
+      'string.pattern.base': 'WhatsApp number must contain only digits (7-15 digits)'
+    }),
     password: Joi.string().min(6).max(128).required(),
     language: Joi.string().valid(
       'ar', 'az', 'zh', 'zh-TW', 'da', 'de', 'el', 
@@ -103,7 +104,6 @@ const validateProfileUpdate = (req, res, next) => {
     first_name: Joi.string().min(2).max(50).optional(),
     last_name: Joi.string().min(2).max(50).optional(),
     email: Joi.string().email().optional(),
-    phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).optional(),
     country_code: Joi.number().integer().positive().optional(),
     password: Joi.string().min(6).max(128).optional(),
     language: Joi.string().valid(
@@ -128,10 +128,14 @@ const validateProfileUpdate = (req, res, next) => {
 const validateWhatsAppTranscriptUpdate = (req, res, next) => {
   const schema = Joi.object({
     name: Joi.string().min(2).max(100).optional(),
-    phone_number: Joi.string().pattern(/^[\+]?[0-9]{7,15}$/).allow('').optional(),
-    country_code: Joi.number().integer().positive().required(),
-    wtp_number: Joi.string().pattern(/^[0-9]{7,15}$/).allow('').optional(),
-    wa_language: Joi.number().integer().positive().required(),
+    first_name: Joi.string().min(2).max(50).optional(),
+    last_name: Joi.string().min(2).max(50).optional(),
+    email: Joi.string().email().optional(),
+    country_code: Joi.number().integer().positive().optional(),
+    wtp_number: Joi.string().pattern(/^[0-9]{7,15}$/).allow('').optional().messages({
+      'string.pattern.base': 'WhatsApp number must contain only digits (7-15 digits)'
+    }),
+    wa_language: Joi.number().integer().positive().optional(),
     password: Joi.string().min(6).max(128).optional()
   });
 

@@ -7,7 +7,7 @@ interface User {
   last_name: string;
   name: string; // For backward compatibility
   email: string;
-  phone_number?: string;
+  wtp_number?: string;
   language: string;
   is_premium: boolean;
 }
@@ -23,7 +23,6 @@ interface AuthContextType {
     first_name?: string;
     last_name?: string;
     email?: string;
-    phone_number?: string;
     password?: string;
   }) => Promise<void>;
   refreshUser: () => void;
@@ -130,7 +129,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     first_name?: string;
     last_name?: string;
     email?: string;
-    phone_number?: string;
     password?: string;
   }): Promise<void> => {
     try {
