@@ -448,7 +448,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Configuration Form */}
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100">
               <form className="p-8 space-y-6" onSubmit={handleWaSave}>
                 {waAlert && (
                   <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl flex items-center">
@@ -462,24 +462,28 @@ const Dashboard: React.FC = () => {
                     <label className="block font-semibold text-gray-700 text-sm">WhatsApp Number</label>
                     <div className="flex gap-3">
                       {/* Searchable Country Dropdown */}
-                      <div className="relative lg:w-32 country-dropdown-container">
+                      <div className="relative w-40 country-dropdown-container">
                         <button
                           type="button"
                           onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                          className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 hover:bg-gray-50 font-medium h-12 shadow-sm"
+                          className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300 hover:bg-white font-medium h-12 shadow-sm"
                         >
-                          <span className="text-left text-gray-700 font-medium text-sm">
+                          <span className="text-left text-gray-700 font-medium text-sm truncate">
                             {selectedCountry ? `+${selectedCountry.phonecode} ${selectedCountry.iso}` : 'Select Country'}
                           </span>
-                          <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 ${isCountryDropdownOpen ? 'rotate-180' : ''}`} />
+                          <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 flex-shrink-0 ml-2 ${isCountryDropdownOpen ? 'rotate-180' : ''}`} />
                         </button>
 
                         {isCountryDropdownOpen && (
-                          <div className="absolute z-[9999] w-80 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-64 overflow-hidden left-0 top-full">
+                          <div className="absolute z-[9999] w-96 mt-2 bg-white border border-gray-200 rounded-2xl shadow-2xl max-h-80 overflow-hidden left-0 top-full backdrop-blur-sm" 
+                               style={{ 
+                                 position: 'absolute',
+                                 zIndex: 9999
+                               }}>
                             {/* Search Input */}
-                            <div className="p-3 border-b border-gray-100 bg-gray-50">
+                            <div className="p-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
                               <div className="relative">
-                                <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                                <Search size={18} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
                                 <input
                                   type="text"
                                   placeholder="Search countries..."
@@ -489,40 +493,50 @@ const Dashboard: React.FC = () => {
                                     setHighlightedIndex(-1);
                                   }}
                                   onKeyDown={handleKeyDown}
-                                  className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                                  className="w-full pl-12 pr-4 py-3.5 border-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white shadow-sm placeholder-gray-400"
                                   autoFocus
                                 />
                               </div>
                             </div>
                             {/* Country List */}
-                            <div className="max-h-48 overflow-y-auto">
+                            <div className="max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                               {filteredCountries.length > 0 ? (
                                 filteredCountries.map((country, index) => (
                                   <button
                                     key={country.code}
                                     type="button"
                                     onClick={() => handleCountrySelect(country)}
-                                    className={`w-full text-left px-3 py-2.5 focus:outline-none text-sm transition-colors border-b border-gray-50 last:border-b-0 ${
+                                    className={`w-full text-left px-4 py-3.5 focus:outline-none text-sm transition-all duration-150 border-b border-gray-50 last:border-b-0 ${
                                       index === highlightedIndex
-                                        ? 'bg-blue-50 text-blue-900'
-                                        : 'hover:bg-gray-50'
+                                        ? 'bg-gradient-to-r from-blue-50 to-blue-100 text-blue-900 border-l-4 border-l-blue-500'
+                                        : 'hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100'
                                     }`}
                                   >
                                     <div className="flex items-center justify-between">
-                                      <div className="flex items-center space-x-3">
-                                        <span className="font-semibold text-gray-900 text-sm">+{country.phonecode} {country.iso}</span>
-                                        <span className="text-sm text-gray-600 truncate">{country.label}</span>
+                                      <div className="flex items-center space-x-4 min-w-0">
+                                        <div className="flex items-center space-x-2">
+                                          <span className="font-bold text-gray-900 text-sm whitespace-nowrap bg-gray-100 px-2 py-1 rounded-md">+{country.phonecode}</span>
+                                          <span className="font-semibold text-gray-700 text-xs uppercase tracking-wide bg-blue-100 text-blue-700 px-2 py-1 rounded-md">{country.iso}</span>
+                                        </div>
+                                        <span className="text-sm text-gray-600 truncate font-medium">{country.label}</span>
                                       </div>
                                       {selectedCountry?.code === country.code && (
-                                        <CheckCircle size={14} className="text-blue-600 flex-shrink-0" />
+                                        <div className="flex-shrink-0 ml-3">
+                                          <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                                            <CheckCircle size={14} className="text-white" />
+                                          </div>
+                                        </div>
                                       )}
                                     </div>
                                   </button>
                                 ))
                               ) : (
-                                <div className="px-3 py-4 text-center text-gray-500 text-sm">
-                                  <Search size={20} className="mx-auto mb-2 text-gray-300" />
-                                  No countries found
+                                <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                                  <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <Search size={20} className="text-gray-400" />
+                                  </div>
+                                  <p className="font-medium">No countries found</p>
+                                  <p className="text-xs text-gray-400 mt-1">Try a different search term</p>
                                 </div>
                               )}
                             </div>
