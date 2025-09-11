@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { ArrowLeft, FileText, Calendar, Clock, Play, Download, Share2, Search, Filter, MoreHorizontal, CheckCircle, AlertCircle, Trash2, Loader2, Settings, RefreshCw } from 'lucide-react'
+import { ArrowLeft, FileText, Calendar, Clock, Download, Share2, Search, Filter, CheckCircle, AlertCircle, Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { apiService } from '../services/api'
 
@@ -35,7 +35,6 @@ const TranscriptionHistory: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
 
   // Fetch transcription history
   const fetchTranscriptions = async () => {
@@ -53,7 +52,6 @@ const TranscriptionHistory: React.FC = () => {
       if (response.success) {
         setTranscriptions(response.data.transcriptions)
         setStats(response.data.statistics)
-        setTotalPages(response.data.pagination.total_pages)
       } else {
         setError(response.message || 'Failed to fetch transcriptions')
       }
@@ -64,53 +62,7 @@ const TranscriptionHistory: React.FC = () => {
     }
   }
 
-  // Fetch stats only
-  const fetchStats = async () => {
-    try {
-      const response = await apiService.getTranscriptionStats()
-      if (response.success) {
-        setStats(response.data.statistics)
-      }
-    } catch (err) {
-      console.error('Failed to fetch stats:', err)
-    }
-  }
 
-  // Delete transcription
-  const handleDeleteTranscription = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this transcription?')) {
-      return
-    }
-
-    try {
-      const response = await apiService.deleteTranscription(id)
-      if (response.success) {
-        // Refresh the list
-        await fetchTranscriptions()
-        await fetchStats()
-      } else {
-        setError(response.message || 'Failed to delete transcription')
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete transcription')
-    }
-  }
-
-  // Refresh transcription from S3
-  const handleRefreshTranscription = async (id: string) => {
-    try {
-      const response = await apiService.refreshTranscriptionFromS3(id)
-      if (response.success) {
-        // Refresh the list
-        await fetchTranscriptions()
-        setNotification({ message: 'Transcription refreshed successfully!', type: 'success' })
-      } else {
-        setError(response.message || 'Failed to refresh transcription')
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to refresh transcription')
-    }
-  }
 
   // Debounced search effect
   useEffect(() => {
@@ -153,6 +105,63 @@ const TranscriptionHistory: React.FC = () => {
       default:
         return 'bg-gray-50 text-gray-700 border-gray-200'
     }
+  }
+
+  // Format audio length to HH:MM:SS format
+  const formatAudioLength = (audioLength: string): string => {
+    // Parse the audio length string to extract seconds
+    // Handle different formats like "45 sec", "30min 40sec", "1 hour 30min 45sec", etc.
+    let totalSeconds = 0
+    
+    // Remove common words and normalize the string
+    const normalized = audioLength.toLowerCase()
+      .replace(/hours?/g, 'h')
+      .replace(/minutes?/g, 'm')
+      .replace(/seconds?/g, 's')
+      .replace(/mins?/g, 'm')
+      .replace(/secs?/g, 's')
+    
+    // Extract hours
+    const hoursMatch = normalized.match(/(\d+)\s*h/)
+    if (hoursMatch) {
+      totalSeconds += parseInt(hoursMatch[1]) * 3600
+    }
+    
+    // Extract minutes
+    const minutesMatch = normalized.match(/(\d+)\s*m/)
+    if (minutesMatch) {
+      totalSeconds += parseInt(minutesMatch[1]) * 60
+    }
+    
+    // Extract seconds
+    const secondsMatch = normalized.match(/(\d+)\s*s/)
+    if (secondsMatch) {
+      totalSeconds += parseInt(secondsMatch[1])
+    }
+    
+    // If no matches found, try to parse as just a number (assuming seconds)
+    if (totalSeconds === 0) {
+      const numberMatch = normalized.match(/(\d+)/)
+      if (numberMatch) {
+        totalSeconds = parseInt(numberMatch[1])
+      }
+    }
+    
+    // Convert to HH:MM:SS format
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  // Remove file extension from filename
+  const removeFileExtension = (filename: string): string => {
+    const lastDotIndex = filename.lastIndexOf('.')
+    if (lastDotIndex === -1) {
+      return filename // No extension found
+    }
+    return filename.substring(0, lastDotIndex)
   }
 
   return (
@@ -319,7 +328,7 @@ const TranscriptionHistory: React.FC = () => {
                           <FileText className="w-6 h-6 text-white" />
                         </div>
                         <div className="flex-1">
-                          <h3 className="font-bold text-gray-900 text-lg mb-1">{transcription.fileName}</h3>
+                          <h3 className="font-bold text-gray-900 text-lg mb-1">{removeFileExtension(transcription.fileName)}</h3>
                           <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
                             <span className="flex items-center bg-gray-50 px-2 py-1 rounded-lg">
                               <Calendar className="w-4 h-4 mr-1" />
@@ -330,7 +339,7 @@ const TranscriptionHistory: React.FC = () => {
                               {transcription.time}
                             </span>
                             <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg font-medium">
-                              {transcription.audioLength}
+                              {formatAudioLength(transcription.audioLength)}
                             </span>
                             <span className="bg-gray-50 px-2 py-1 rounded-lg">
                               {transcription.fileSize}
@@ -368,30 +377,10 @@ const TranscriptionHistory: React.FC = () => {
                     
                     <div className="flex items-center space-x-1 ml-4">
                       <button 
-                        className="p-3 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-xl transition-all duration-200"
-                        title="Play audio"
-                      >
-                        <Play className="w-5 h-5" />
-                      </button>
-                      <button 
                         className="p-3 text-green-500 hover:text-green-700 hover:bg-green-50 rounded-xl transition-all duration-200"
                         title="Download transcription"
                       >
                         <Download className="w-5 h-5" />
-                      </button>
-                      <button 
-                        className="p-3 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-xl transition-all duration-200"
-                        title="Refresh from S3"
-                        onClick={() => handleRefreshTranscription(transcription.id)}
-                      >
-                        <RefreshCw className="w-5 h-5" />
-                      </button>
-                      <button 
-                        className="p-3 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all duration-200"
-                        title="Delete transcription"
-                        onClick={() => handleDeleteTranscription(transcription.id)}
-                      >
-                        <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
                   </div>
