@@ -26,15 +26,18 @@ const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
+
     const allowedOrigins = [
       process.env.APP_URL || 'http://localhost:5173',
       'http://localhost:5173', // Vite default port
       'https://voicemessage2text.com', // Production frontend
       'https://www.voicemessage2text.com', // Production frontend with www
-      'https://api.voicemessage2text.com' // API domain
+      'https://api.voicemessage2text.com', // API domain
+      'https://api.voicenotescribe.com',
+      'https://www.voicenotescribe.com',
+      'https://voicenotescribe.com',
     ];
-    
+
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -226,7 +229,7 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = app; 
+module.exports = app;
 
 // ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '62gb$t0/<Yb+';
 // FLUSH PRIVILEGES;
