@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { MessageSquare, Headphones, FileText, FileAudio, FileVideo, Zap, Shield, Globe, Clock, CheckCircle, ArrowRight, Star, Sparkles, Play, Download } from 'lucide-react'
+import { MessageSquare, Headphones, FileText, FileAudio, FileVideo, Zap, Shield, Globe, Clock, CheckCircle, ArrowRight, Sparkles, Play, Download } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import LoadingSpinner from '../components/LoadingSpinner'
 
@@ -19,10 +19,6 @@ const Home: React.FC = () => {
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-purple-600/10"></div>
         <div className="relative compact-container py-12 lg:py-16">
           <div className="text-center max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-1.5 bg-gradient-to-r from-blue-100 to-purple-100 px-3 py-1.5 rounded-full mb-6">
-              <Star className="w-3 h-3 text-yellow-500" />
-              <span className="text-xs font-medium text-gray-700">AI-Powered Transcription</span>
-            </div>
             <h1 className="text-3xl lg:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               Convert WhatsApp Audio to Text
             </h1>
@@ -95,9 +91,9 @@ const Home: React.FC = () => {
       {/* Features Section */}
       <section className="compact-container py-12">
         <div className="text-center mb-12">
-          <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-4">Why Choose WhatsApp2Text?</h2>
+          <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-4">Why Choose voicenotescribe?</h2>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Experience the best in AI-powered transcription with our advanced features
+            Experience the best in transcription with our advanced features
           </p>
         </div>
         
@@ -217,7 +213,7 @@ const Home: React.FC = () => {
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl p-12 text-center text-white">
           <h2 className="text-4xl lg:text-5xl font-bold mb-6">Ready to Get Started?</h2>
           <p className="text-xl mb-8 opacity-90 max-w-2xl mx-auto">
-            Join thousands of users who trust WhatsApp2Text for their transcription needs
+            Join thousands of users who trust voicenotescribe for their transcription needs
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link 

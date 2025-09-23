@@ -77,7 +77,7 @@ const Header: React.FC = () => {
               <span className={`text-lg font-bold transition-colors duration-300 ${
                 isScrolled ? 'text-gray-900' : 'text-white'
               }`}>
-                WhatsApp2Text
+                voicenotescribe
               </span>
             </div>
           </Link>

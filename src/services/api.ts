@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.voicemessage2text.com/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.voicenotescribe.com/api';
 
 interface ApiResponse<T = any> {
   success: boolean;
@@ -107,6 +107,20 @@ class ApiService {
     return this.request<{ accessToken: string }>('/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
+    });
+  }
+
+  async forgotPassword(email: string): Promise<ApiResponse> {
+    return this.request('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<ApiResponse> {
+    return this.request('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
     });
   }
 

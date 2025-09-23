@@ -124,7 +124,7 @@ const SubscriptionSuccess: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center">
         <Helmet>
-          <title>Processing Payment - WhatsApp2Text</title>
+          <title>Processing Payment - voicenotescribe</title>
           <meta name="description" content="Processing your subscription payment..." />
         </Helmet>
         <div className="text-center">
@@ -140,7 +140,7 @@ const SubscriptionSuccess: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center py-12 px-4">
         <Helmet>
-          <title>Payment Error - WhatsApp2Text</title>
+          <title>Payment Error - voicenotescribe</title>
           <meta name="description" content="There was an issue with your payment" />
         </Helmet>
         
@@ -182,7 +182,7 @@ const SubscriptionSuccess: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center py-12 px-4">
       <Helmet>
-        <title>Subscription Successful - WhatsApp2Text</title>
+        <title>Subscription Successful - voicenotescribe</title>
         <meta name="description" content="Your subscription has been successfully activated!" />
       </Helmet>
       
@@ -198,7 +198,7 @@ const SubscriptionSuccess: React.FC = () => {
         </h1>
         
         <p className="text-gray-600 mb-6">
-          Thank you for subscribing to WhatsApp2Text! Your account has been upgraded and you now have access to {import.meta.env.VITE_PRO_MONTHLY_MINUTES || '3000'} minutes of transcription per month.
+          Thank you for subscribing to voicenotescribe! Your account has been upgraded and you now have access to {import.meta.env.VITE_PRO_MONTHLY_MINUTES || '3000'} minutes of transcription per month.
         </p>
 
         {/* Payment Details */}

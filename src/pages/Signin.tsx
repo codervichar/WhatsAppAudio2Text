@@ -35,8 +35,8 @@ const Signin: React.FC = () => {
   return (
     <div className="gradient-bg min-h-screen flex items-center justify-center compact-section">
       <Helmet>
-        <title>Sign In - WhatsApp2Text</title>
-        <meta name="description" content="Sign in to your WhatsApp2Text account to manage your subscription and access your transcriptions." />
+        <title>Sign In - voicenotescribe</title>
+        <meta name="description" content="Sign in to your voicenotescribe account to manage your subscription and access your transcriptions." />
       </Helmet>
       
       <div className="compact-container">

@@ -9,13 +9,13 @@ const BlogPost: React.FC = () => {
   const post = {
     title: "The Benefits of Audio-to-Text Conversion",
     date: "2023-05-15",
-    content: "Audio-to-text conversion offers numerous benefits in today's fast-paced digital world. It allows for quick and easy transcription of voice messages, improving accessibility and searchability of audio content. This technology is particularly useful for professionals who need to review long audio files, students who want to convert lecture recordings into study notes, and individuals with hearing impairments who rely on text-based communication. With WhatsApp2Text, you can harness these benefits directly from your WhatsApp conversations, streamlining your communication and boosting productivity."
+    content: "Audio-to-text conversion offers numerous benefits in today's fast-paced digital world. It allows for quick and easy transcription of voice messages, improving accessibility and searchability of audio content. This technology is particularly useful for professionals who need to review long audio files, students who want to convert lecture recordings into study notes, and individuals with hearing impairments who rely on text-based communication. With voicenotescribe, you can harness these benefits directly from your WhatsApp conversations, streamlining your communication and boosting productivity."
   }
 
   return (
     <div className="container mx-auto px-4 py-8 sm:py-12">
       <Helmet>
-        <title>{post.title} - WhatsApp2Text Blog</title>
+        <title>{post.title} - voicenotescribe Blog</title>
         <meta name="description" content={post.content.substring(0, 160)} />
       </Helmet>
       <Link to="/blog" className="text-blue-600 hover:text-blue-800 mb-4 inline-block">&larr; Back to Blog</Link>

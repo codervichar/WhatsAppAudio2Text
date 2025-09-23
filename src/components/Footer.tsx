@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { MessageSquare, Mail, Phone, MapPin, Facebook, Twitter, Instagram, Linkedin, Github, Sparkles, Zap, Shield, Globe, ArrowRight, Heart } from 'lucide-react'
+import { MessageSquare, Mail, Phone, MapPin, Facebook, Twitter, Instagram, Linkedin, Github, Zap, Shield, Globe, ArrowRight, Heart } from 'lucide-react'
 
 const Footer: React.FC = () => {
   return (
@@ -34,16 +34,12 @@ const Footer: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                  WhatsApp2Text
+                  voicenotescribe
                 </h3>
-                <div className="flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-yellow-400" />
-                  <span className="text-xs text-gray-400">AI Transcription</span>
-                </div>
               </div>
             </div>
             <p className="text-gray-300 leading-relaxed text-lg">
-              Transform your WhatsApp voice messages into accurate text transcripts with our advanced AI-powered platform.
+              Transform your WhatsApp voice messages into accurate text transcripts with our advanced platform.
             </p>
             <div className="flex space-x-3">
               <a href="#" className="p-3 bg-gray-800 hover:bg-blue-600 rounded-xl transition-all duration-300 transform hover:scale-110 hover:shadow-lg">
@@ -135,7 +131,7 @@ const Footer: React.FC = () => {
                 <div className="p-2 bg-blue-500/20 rounded-lg group-hover:bg-blue-500/30 transition-all duration-300">
                   <Mail className="w-5 h-5 text-blue-400" />
                 </div>
-                <span className="text-gray-300 group-hover:text-white transition-colors duration-300">support@whatsapp2text.com</span>
+                <span className="text-gray-300 group-hover:text-white transition-colors duration-300">support@voicenotescribe.com</span>
               </div>
               <div className="flex items-center space-x-4 p-3 bg-gray-800/50 rounded-xl hover:bg-gray-800/70 transition-all duration-300 group">
                 <div className="p-2 bg-green-500/20 rounded-lg group-hover:bg-green-500/30 transition-all duration-300">
@@ -159,7 +155,7 @@ const Footer: React.FC = () => {
         <div className="container mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
             <div className="text-gray-400 text-sm flex items-center gap-2">
-              <p>&copy; 2024 WhatsApp2Text. All rights reserved.</p>
+              <p>&copy; 2024 voicenotescribe. All rights reserved.</p>
               <span className="text-pink-400">Made with</span>
               <Heart className="w-4 h-4 text-pink-400 animate-pulse" />
               <span className="text-pink-400">for you</span>

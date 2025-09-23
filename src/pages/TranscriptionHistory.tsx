@@ -167,8 +167,8 @@ const TranscriptionHistory: React.FC = () => {
   return (
     <div className="min-h-screen gradient-bg">
       <Helmet>
-        <title>Transcription History - WhatsApp2Text</title>
-        <meta name="description" content="View your transcription history from WhatsApp2Text." />
+        <title>Transcription History - voicenotescribe</title>
+        <meta name="description" content="View your transcription history from voicenotescribe." />
       </Helmet>
       
       {/* Header */}

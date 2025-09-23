@@ -352,19 +352,19 @@ const forgotPassword = async (req, res) => {
     );
 
     // Send reset email
-    // const emailResult = await sendPasswordResetEmail(
-    //   user.email,
-    //   resetToken, // Send unhashed token in email
-    //   user.first_name || 'User'
-    // );
+    const emailResult = await sendPasswordResetEmail(
+      user.email,
+      resetToken, // Send unhashed token in email
+      user.first_name || 'User'
+    );
 
-    // if (!emailResult.success) {
-    //   console.error('Failed to send password reset email:', emailResult.error);
-    //   return res.status(500).json({
-    //     success: false,
-    //     message: 'Failed to send password reset email. Please try again later.'
-    //   });
-    // }
+    if (!emailResult.success) {
+      console.error('Failed to send password reset email:', emailResult.error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send password reset email. Please try again later.'
+      });
+    }
 
     res.json({
       success: true,

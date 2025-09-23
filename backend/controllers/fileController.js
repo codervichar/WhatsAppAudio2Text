@@ -62,7 +62,7 @@ async function deepgramTranscribeFile(transcriptionId, filePath, language = 'en'
     console.log('✅ File uploaded to S3:', s3Url);
 
     // Call Deepgram API
-    const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL || `${process.env.APP_URL || 'https://api.voicemessage2text.com'}/api/webhook/deepgram/hook`;
+    const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL || `${process.env.APP_URL || 'https://api.voicenotescribe.com'}/api/webhook/deepgram/hook`;
     const apiUrl = 'https://api.deepgram.com/v1/listen';
     
     let queryString = '?model=whisper-large&smart_format=true';

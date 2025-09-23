@@ -2,13 +2,13 @@ const nodemailer = require('nodemailer');
 
 // Create reusable transporter object using SMTP transport
 const createTransporter = () => {
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: process.env.SMTP_PORT || 587,
     secure: false, // true for 465, false for other ports
     auth: {
-      user: process.env.SMTP_USER, // your email
-      pass: process.env.SMTP_PASS  // your email password or app password
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
     }
   });
 };
@@ -17,12 +17,14 @@ const createTransporter = () => {
 const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => {
   try {
     const transporter = createTransporter();
-    
+
+    console.log('transporter', transporter);
+
     // Password reset URL - adjust this to match your frontend URL
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
-    
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
+
     const mailOptions = {
-      from: `"WhatsApp Audio2Text" <${process.env.SMTP_USER}>`,
+      from: `"WhatsApp Audio2Text" <${process.env.SMTP_USER || process.env.MAIL_USERNAME || 'support@whatsappaudio2text.com'}>`,
       to: email,
       subject: 'Password Reset Request - WhatsApp Audio2Text',
       html: `
@@ -99,29 +101,15 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('Password reset email sent:', info.messageId);
+    console.log('Password reset email sent via SMTP:', info.messageId);
     return { success: true, messageId: info.messageId };
-    
+
   } catch (error) {
-    console.error('Error sending password reset email:', error);
+    console.error('Error sending password reset email via SMTP:', error);
     return { success: false, error: error.message };
   }
 };
 
-// Test email configuration
-const testEmailConfig = async () => {
-  try {
-    const transporter = createTransporter();
-    await transporter.verify();
-    console.log('Email configuration is valid');
-    return true;
-  } catch (error) {
-    console.error('Email configuration error:', error);
-    return false;
-  }
-};
-
 module.exports = {
-  sendPasswordResetEmail,
-  testEmailConfig
+  sendPasswordResetEmail
 }; 

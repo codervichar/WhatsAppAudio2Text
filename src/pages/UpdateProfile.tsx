@@ -215,8 +215,8 @@ const UpdateProfile: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <Helmet>
-        <title>Update Profile - WhatsApp2Text</title>
-        <meta name="description" content="Update your WhatsApp2Text profile information." />
+        <title>Update Profile - voicenotescribe</title>
+        <meta name="description" content="Update your voicenotescribe profile information." />
       </Helmet>
       
       <div className="sm:mx-auto sm:w-full sm:max-w-md">

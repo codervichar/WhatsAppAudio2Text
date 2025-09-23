@@ -7,12 +7,12 @@ const Welcome: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8 sm:py-12">
       <Helmet>
-        <title>Welcome to WhatsApp2Text</title>
-        <meta name="description" content="Welcome to WhatsApp2Text. Your account is now active." />
+        <title>Welcome to voicenotescribe</title>
+        <meta name="description" content="Welcome to voicenotescribe. Your account is now active." />
       </Helmet>
       <div className="max-w-2xl mx-auto text-center">
         <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-        <h1 className="text-3xl sm:text-4xl font-bold mb-4">Welcome to WhatsApp2Text!</h1>
+        <h1 className="text-3xl sm:text-4xl font-bold mb-4">Welcome to voicenotescribe!</h1>
         <p className="text-xl mb-8">Your account has been successfully created and your subscription is now active.</p>
         <div className="bg-white p-6 rounded-lg shadow-md mb-8">
           <h2 className="text-2xl font-semibold mb-4">Next Steps</h2>

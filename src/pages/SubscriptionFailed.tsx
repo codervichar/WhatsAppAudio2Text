@@ -10,7 +10,7 @@ const SubscriptionFailed: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center py-12 px-4">
       <Helmet>
-        <title>Payment Failed - WhatsApp2Text</title>
+        <title>Payment Failed - voicenotescribe</title>
         <meta name="description" content="Your payment verification failed. Please try again." />
       </Helmet>
       

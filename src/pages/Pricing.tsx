@@ -320,7 +320,7 @@ const Pricing: React.FC = () => {
           <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl p-12 text-center text-white">
             <h2 className="text-4xl lg:text-5xl font-bold mb-6">Ready to Get Started?</h2>
             <p className="text-xl mb-8 opacity-90 max-w-2xl mx-auto">
-              Join thousands of users who trust WhatsApp2Text for their transcription needs
+              Join thousands of users who trust voicenotescribe for their transcription needs
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link 

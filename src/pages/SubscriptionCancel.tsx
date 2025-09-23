@@ -7,7 +7,7 @@ const SubscriptionCancel: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center py-12 px-4">
       <Helmet>
-        <title>Payment Cancelled - WhatsApp2Text</title>
+        <title>Payment Cancelled - voicenotescribe</title>
         <meta name="description" content="Your payment was cancelled. No charges were made." />
       </Helmet>
       

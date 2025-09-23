@@ -155,8 +155,8 @@ const SubscriptionManagement: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <Helmet>
-        <title>Subscription Management - WhatsApp2Text</title>
-        <meta name="description" content="Manage your WhatsApp2Text subscription" />
+        <title>Subscription Management - voicenotescribe</title>
+        <meta name="description" content="Manage your voicenotescribe subscription" />
       </Helmet>
 
       {/* Header */}

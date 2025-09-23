@@ -173,7 +173,7 @@ const Signup: React.FC = () => {
       <div className="compact-container">
         <div className="form-container max-w-lg">
           <h1 className="compact-header">Create Your Account</h1>
-          <p className="text-center text-gray-600 text-compact mb-6">Join WhatsApp2Text to start transcribing audio messages</p>
+          <p className="text-center text-gray-600 text-compact mb-6">Join voicenotescribe to start transcribing audio messages</p>
           
           {error && (
             <div className="alert-compact bg-red-50 border border-red-200 text-red-700 flex items-center">
