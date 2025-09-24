@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { User, Mail, Phone, Lock, AlertCircle, Eye, EyeOff, CheckCircle, ChevronDown, Search } from 'lucide-react'
+import { User, Mail, Phone, Lock, Eye, EyeOff, CheckCircle, ChevronDown, Search } from 'lucide-react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { apiService } from '../services/api'
+import { useToast } from '../context/ToastContext'
+import { apiService } from '../services/api' // API service for countries
 
 const Signup: React.FC = () => {
   const [firstName, setFirstName] = useState('')
@@ -13,7 +14,6 @@ const Signup: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   
   // Country dropdown state
@@ -23,7 +23,9 @@ const Signup: React.FC = () => {
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const [countryOptions, setCountryOptions] = useState<{ id: number; code: string; label: string; phonecode?: string; iso?: string }[]>([])
   const { signup } = useAuth()
+  const { showError, showSuccess } = useToast()
   const navigate = useNavigate()
+
 
 
 
@@ -122,47 +124,49 @@ const Signup: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
 
     // Validate password
     if (!passwordValidation.isValid) {
-      setError('Password must be at least 8 characters long')
+      showError('Password must be at least 8 characters long', 5000, 'bottom-right')
       return
     }
 
     // Validate password confirmation
     if (password !== confirmPassword) {
-      setError('Passwords do not match')
+      showError('Passwords do not match', 5000, 'bottom-right')
       return
     }
 
     // Validate phone number
     if (!phoneNumber || phoneNumber.trim() === '') {
-      setError('WhatsApp number is required')
+      showError('WhatsApp number is required', 5000, 'bottom-right')
       return
     }
 
     setIsLoading(true)
 
     try {
-      // Format phone number with country code if provided
-      // const formattedPhoneNumber = selectedCountry && phoneNumber 
-      //   ? `+${selectedCountry.phonecode}${phoneNumber}` 
-      //   : phoneNumber || undefined
-
       await signup({
         first_name: firstName,
         last_name: lastName,
         email,
-        wtp_number: phoneNumber || undefined, // Store WhatsApp number separately, send undefined if empty
+        wtp_number: phoneNumber || undefined,
         password,
-        country_id: selectedCountry?.id // Updated to match backend expectation
+        country_id: selectedCountry?.id
       })
       
-      // Redirect to signup page after successful signup
-      navigate('/signup')
+      // Show success message and redirect
+      showSuccess('Account created successfully! Welcome to VoiceNoteScribe.', 5000, 'top-right')
+      navigate('/dashboard')
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred during signup')
+      console.error('Signup error:', error)
+      
+      // Show only the API response error message at bottom right
+      if (error instanceof Error) {
+        showError(error.message, 5000, 'bottom-right')
+      } else {
+        showError('An error occurred during signup', 5000, 'bottom-right')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -174,13 +178,6 @@ const Signup: React.FC = () => {
         <div className="form-container max-w-lg">
           <h1 className="compact-header">Create Your Account</h1>
           <p className="text-center text-gray-600 text-compact mb-6">Join voicenotescribe to start transcribing audio messages</p>
-          
-          {error && (
-            <div className="alert-compact bg-red-50 border border-red-200 text-red-700 flex items-center">
-              <AlertCircle size={16} className="mr-2 flex-shrink-0" />
-              <span className="text-compact">{error}</span>
-            </div>
-          )}
           
           <form onSubmit={handleSubmit} className="space-y-4">
 

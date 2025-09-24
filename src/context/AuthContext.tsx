@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { apiService, type AuthResponse, type SignupData, type LoginData } from '../services/api';
+import { apiService, type SignupData, type LoginData } from '../services/api';
 
 interface User {
   id: number;
@@ -83,8 +83,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const signup = async (userData: SignupData): Promise<void> => {
     try {
+      console.log('AuthContext signup called with:', userData);
       setLoading(true);
       const response = await apiService.signup(userData);
+      console.log('AuthContext signup response:', response);
       
       if (response.success && response.data) {
         const { user, accessToken, refreshToken } = response.data;
@@ -96,10 +98,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         setUser(user);
         setIsAuthenticated(true);
+        console.log('AuthContext signup successful');
       } else {
+        console.log('AuthContext signup failed:', response.message);
         throw new Error(response.message || 'Signup failed');
       }
     } catch (error) {
+      console.log('AuthContext signup error caught:', error);
       throw error;
     } finally {
       setLoading(false);

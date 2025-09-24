@@ -1,7 +1,7 @@
-import React from 'react'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom'
 import { HelmetProvider } from 'react-helmet-async'
 import { AuthProvider } from './context/AuthContext'
+import { ToastProvider } from './context/ToastContext'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -14,6 +14,7 @@ import ResetPassword from './pages/ResetPassword'
 import Pricing from './pages/Pricing'
 import BlogList from './pages/BlogList'
 import BlogPost from './pages/BlogPost'
+import ContactUs from './pages/ContactUs'
 import Dashboard from './pages/Dashboard'
 import Welcome from './pages/Welcome'
 import TranscriptionHistory from './pages/TranscriptionHistory'
@@ -30,7 +31,8 @@ function App() {
     <HelmetProvider>
       <Router>
         <AuthProvider>
-          <div className="flex flex-col min-h-screen gradient-bg">
+          <ToastProvider>
+            <div className="flex flex-col min-h-screen gradient-bg">
             <Header />
             <main className="flex-grow pt-16">
               <Routes>
@@ -56,6 +58,7 @@ function App() {
                 <Route path="/pricing" element={<Pricing />} />
                 <Route path="/blog" element={<BlogList />} />
                 <Route path="/blog/:id" element={<BlogPost />} />
+                <Route path="/contact" element={<ContactUs />} />
                 <Route 
                   path="/dashboard" 
                   element={
@@ -128,7 +131,8 @@ function App() {
               </Routes>
             </main>
             <Footer />
-          </div>
+            </div>
+          </ToastProvider>
         </AuthProvider>
       </Router>
     </HelmetProvider>

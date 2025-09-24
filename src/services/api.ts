@@ -29,11 +29,19 @@ interface SignupData {
   password: string;
   language?: string;
   country_code?: number;
+  country_id?: number; // Added to match backend expectation - for signup
 }
 
 interface LoginData {
   email: string;
   password: string;
+}
+
+interface ContactFormData {
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
 }
 
 class ApiService {
@@ -60,6 +68,13 @@ class ApiService {
     try {
       const response = await fetch(url, config);
       const data = await response.json();
+      
+      console.log('API Response:', {
+        url,
+        status: response.status,
+        ok: response.ok,
+        data
+      });
 
       if (!response.ok) {
         // If token expired or unauthorized, redirect to login
@@ -69,12 +84,35 @@ class ApiService {
           localStorage.removeItem('user');
           window.location.replace('/signin');
         }
-        throw new Error(data.message || 'Something went wrong');
+        
+        // Provide more specific error messages based on status codes
+        let errorMessage = data.message || 'Something went wrong';
+        
+        if (response.status === 400) {
+          errorMessage = data.message || 'Invalid request. Please check your input.';
+        } else if (response.status === 401) {
+          errorMessage = data.message || 'Authentication failed.';
+        } else if (response.status === 403) {
+          errorMessage = data.message || 'Access denied.';
+        } else if (response.status === 404) {
+          errorMessage = data.message || 'Resource not found.';
+        } else if (response.status === 409) {
+          errorMessage = data.message || 'Conflict. Resource already exists.';
+        } else if (response.status >= 500) {
+          errorMessage = data.message || 'Server error. Please try again later.';
+        }
+        
+        console.log('Throwing API error:', errorMessage);
+        throw new Error(errorMessage);
       }
 
       return data;
     } catch (error) {
       if (error instanceof Error) {
+        // Check if it's a network error
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          throw new Error('Network error. Please check your internet connection and try again.');
+        }
         throw error;
       }
       throw new Error('Network error occurred');
@@ -264,7 +302,15 @@ class ApiService {
       method: 'POST',
     });
   }
+
+  // Contact form endpoint
+  async sendContactForm(contactData: ContactFormData): Promise<ApiResponse> {
+    return this.request('/contact', {
+      method: 'POST',
+      body: JSON.stringify(contactData),
+    });
+  }
 }
 
 export const apiService = new ApiService();
-export type { SignupData, LoginData, AuthResponse }; 
+export type { SignupData, LoginData, AuthResponse, ContactFormData }; 

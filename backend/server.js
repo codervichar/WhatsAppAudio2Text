@@ -14,6 +14,7 @@ const fileRoutes = require('./routes/files');
 const webhookRoutes = require('./routes/webhook');
 const stripeRoutes = require('./routes/stripe');
 const transcriptionRoutes = require('./routes/transcriptions');
+const contactRoutes = require('./routes/contact');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -109,6 +110,7 @@ app.use('/api/files', fileRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/transcriptions', transcriptionRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -120,6 +122,7 @@ app.get('/', (req, res) => {
       auth: '/api/auth',
       users: '/api/users',
       files: '/api/files',
+      contact: '/api/contact',
       health: '/health'
     }
   });

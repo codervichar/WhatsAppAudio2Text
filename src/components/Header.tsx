@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { MessageSquare, Menu, X, User, Home, CreditCard, FileText, Settings, LogOut, UserPlus, LogIn, ChevronDown } from 'lucide-react'
+import { MessageSquare, Menu, X, User, Home, CreditCard, FileText, Settings, LogOut, UserPlus, LogIn, ChevronDown, Mail } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const Header: React.FC = () => {
@@ -121,6 +121,19 @@ const Header: React.FC = () => {
                 >
                   <FileText size={14} />
                   Blog
+                </Link>
+              </li>
+              <li>
+                <Link 
+                  to="/contact" 
+                  className={`px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                    isActive('/contact') 
+                      ? (isScrolled ? 'bg-blue-100 text-blue-600' : 'bg-white/20 text-white')
+                      : (isScrolled ? 'text-gray-700 hover:bg-gray-100' : 'text-white/90 hover:bg-white/10')
+                  }`}
+                >
+                  <Mail size={14} />
+                  Contact
                 </Link>
               </li>
               
@@ -252,6 +265,18 @@ const Header: React.FC = () => {
                 >
                   <FileText className="w-5 h-5" />
                   Blog
+                </Link>
+              </li>
+              <li>
+                <Link 
+                  to="/contact" 
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
+                    isActive('/contact') ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'
+                  }`} 
+                  onClick={toggleMenu}
+                >
+                  <Mail className="w-5 h-5" />
+                  Contact
                 </Link>
               </li>
               
