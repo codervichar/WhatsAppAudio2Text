@@ -127,19 +127,19 @@ const Signup: React.FC = () => {
 
     // Validate password
     if (!passwordValidation.isValid) {
-      showError('Password must be at least 8 characters long', 5000, 'bottom-right')
+      showError('Password must be at least 8 characters long')
       return
     }
 
     // Validate password confirmation
     if (password !== confirmPassword) {
-      showError('Passwords do not match', 5000, 'bottom-right')
+      showError('Passwords do not match')
       return
     }
 
     // Validate phone number
     if (!phoneNumber || phoneNumber.trim() === '') {
-      showError('WhatsApp number is required', 5000, 'bottom-right')
+      showError('WhatsApp number is required')
       return
     }
 
@@ -156,16 +156,16 @@ const Signup: React.FC = () => {
       })
       
       // Show success message and redirect
-      showSuccess('Account created successfully! Welcome to VoiceNoteScribe.', 5000, 'top-right')
+      showSuccess('Account created successfully! Welcome to VoiceNoteScribe.')
       navigate('/dashboard')
     } catch (error) {
       console.error('Signup error:', error)
       
-      // Show only the API response error message at bottom right
+      // Show only the API response error message
       if (error instanceof Error) {
-        showError(error.message, 5000, 'bottom-right')
+        showError(error.message)
       } else {
-        showError('An error occurred during signup', 5000, 'bottom-right')
+        showError('An error occurred during signup')
       }
     } finally {
       setIsLoading(false)

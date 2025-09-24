@@ -41,6 +41,12 @@ const ToastDemo: React.FC = () => {
         </button>
       </div>
       
+      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+        <p className="text-sm text-blue-800">
+          <strong>Note:</strong> All toast messages now appear at the bottom-right corner by default.
+        </p>
+      </div>
+      
       <div className="mt-8 p-4 bg-gray-100 rounded">
         <h3 className="font-semibold mb-2">Usage in Components:</h3>
         <pre className="text-sm bg-white p-3 rounded overflow-x-auto">

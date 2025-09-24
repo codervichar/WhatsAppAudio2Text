@@ -23,7 +23,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     message: string, 
     type: 'success' | 'error' | 'info' | 'warning', 
     duration = 5000,
-    position: ToastProps['position'] = 'top-right'
+    position: ToastProps['position'] = 'bottom-right'
   ) => {
     const id = Math.random().toString(36).substr(2, 9)
     const newToast: ToastProps = {
