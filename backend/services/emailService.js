@@ -24,9 +24,9 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
 
     const mailOptions = {
-      from: `"voicemessage2text" <${process.env.SMTP_USER || process.env.MAIL_USERNAME || 'support@voicemessage2text.com'}>`,
+      from: `"voicenotescribe" <${process.env.SMTP_USER || process.env.MAIL_USERNAME || 'support@voicenotescribe.com'}>`,
       to: email,
-      subject: 'Password Reset Request - voicemessage2text',
+      subject: 'Password Reset Request - voicenotescribe',
       html: `
         <!DOCTYPE html>
         <html>
@@ -43,7 +43,7 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
           <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #ddd;">
             <h2 style="color: #333; margin-top: 0;">Hello ${firstName}!</h2>
             
-            <p>We received a request to reset your password for your voicemessage2text account.</p>
+            <p>We received a request to reset your password for your voicenotescribe account.</p>
             
             <div style="text-align: center; margin: 30px 0;">
               <a href="${resetUrl}" 
@@ -73,7 +73,7 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
             
             <p style="color: #666; font-size: 14px; margin-top: 30px;">
               Best regards,<br>
-              The voicemessage2text Team
+              The voicenotescribe Team
             </p>
           </div>
           
@@ -96,7 +96,7 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
         If you didn't request this password reset, please ignore this email.
         
         Best regards,
-        The voicemessage2text Team
+        The voicenotescribe Team
       `
     };
 
@@ -123,7 +123,7 @@ const sendContactFormEmail = async (contactData) => {
       from: `"${name}" <${process.env.SMTP_USER}>`,
       to: adminEmail,
       replyTo: email,
-      subject: `Contact Form: ${subject} - voicemessage2text`,
+      subject: `Contact Form: ${subject} - voicenotescribe`,
       html: `
         <!DOCTYPE html>
         <html>
@@ -197,7 +197,7 @@ const sendContactFormEmail = async (contactData) => {
           </div>
           
           <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
-            <p>This email was sent from the voicemessage2text contact form.</p>
+            <p>This email was sent from the voicenotescribe contact form.</p>
           </div>
         </body>
         </html>
@@ -216,7 +216,7 @@ const sendContactFormEmail = async (contactData) => {
         ${message}
         
         ---
-        This email was sent from the voicemessage2text contact form.
+        This email was sent from the voicenotescribe contact form.
         Reply directly to this email to respond to the sender.
       `
     };

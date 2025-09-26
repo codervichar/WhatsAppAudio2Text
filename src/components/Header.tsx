@@ -82,21 +82,23 @@ const Header: React.FC = () => {
             </div>
           </Link>
           
-          <nav className="hidden lg:block">
+          <nav className="hidden md:block">
             <ul className="flex space-x-4 items-center list-none m-0 p-0">
-              <li>
-                <Link 
-                  to="/" 
-                  className={`px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
-                    isActive('/') 
-                      ? (isScrolled ? 'bg-blue-100 text-blue-600' : 'bg-white/20 text-white')
-                      : (isScrolled ? 'text-gray-700 hover:bg-gray-100' : 'text-white/90 hover:bg-white/10')
-                  }`}
-                >
-                  <Home size={14} />
-                  Home
-                </Link>
-              </li>
+              {!isAuthenticated && (
+                <li>
+                  <Link 
+                    to="/" 
+                    className={`px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                      isActive('/') 
+                        ? (isScrolled ? 'bg-blue-100 text-blue-600' : 'bg-white/20 text-white')
+                        : (isScrolled ? 'text-gray-700 hover:bg-gray-100' : 'text-white/90 hover:bg-white/10')
+                    }`}
+                  >
+                    <Home size={14} />
+                    Home
+                  </Link>
+                </li>
+              )}
               <li>
                 <Link 
                   to="/pricing" 
@@ -218,7 +220,7 @@ const Header: React.FC = () => {
           </nav>
           
           <button 
-            className={`lg:hidden p-1.5 rounded-lg transition-all duration-200 ${
+            className={`md:hidden p-1.5 rounded-lg transition-all duration-200 ${
               isScrolled ? 'text-gray-700 hover:bg-gray-100' : 'text-white hover:bg-white/10'
             }`} 
             onClick={toggleMenu}
@@ -228,21 +230,23 @@ const Header: React.FC = () => {
         </div>
       </div>
       {isMenuOpen && (
-        <nav className="lg:hidden bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-xl">
+        <nav className="md:hidden bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-xl">
           <div className="container mx-auto px-4 py-6">
             <ul className="space-y-2 list-none m-0 p-0">
-              <li>
-                <Link 
-                  to="/" 
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                    isActive('/') ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'
-                  }`} 
-                  onClick={toggleMenu}
-                >
-                  <Home className="w-5 h-5" />
-                  Home
-                </Link>
-              </li>
+              {!isAuthenticated && (
+                <li>
+                  <Link 
+                    to="/" 
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
+                      isActive('/') ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'
+                    }`} 
+                    onClick={toggleMenu}
+                  >
+                    <Home className="w-5 h-5" />
+                    Home
+                  </Link>
+                </li>
+              )}
               <li>
                 <Link 
                   to="/pricing" 

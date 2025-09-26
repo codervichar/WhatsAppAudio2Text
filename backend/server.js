@@ -31,12 +31,9 @@ const corsOptions = {
     const allowedOrigins = [
       process.env.APP_URL || 'http://localhost:5173',
       'http://localhost:5173', // Vite default port
-      'https://voicemessage2text.com', // Production frontend
-      'https://www.voicemessage2text.com', // Production frontend with www
-      'https://api.voicemessage2text.com', // API domain
-      'https://api.voicenotescribe.com',
-      'https://www.voicenotescribe.com',
-      'https://voicenotescribe.com',
+      'https://voicenotescribe.com', // Production frontend
+      'https://www.voicenotescribe.com', // Production frontend with www
+      'https://api.voicenotescribe.com' // API domain
     ];
 
     if (allowedOrigins.indexOf(origin) !== -1) {

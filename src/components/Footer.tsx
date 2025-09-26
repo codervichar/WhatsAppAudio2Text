@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { MessageSquare, Mail, Phone, MapPin, Facebook, Twitter, Instagram, Linkedin, Github, Zap, Shield, Globe, ArrowRight, Heart } from 'lucide-react'
+import { MessageSquare, Mail, Facebook, Twitter, Instagram, Linkedin, Github, Zap, Shield, Globe, ArrowRight, Heart } from 'lucide-react'
 
 const Footer: React.FC = () => {
   return (
@@ -132,18 +132,6 @@ const Footer: React.FC = () => {
                   <Mail className="w-5 h-5 text-blue-400" />
                 </div>
                 <span className="text-gray-300 group-hover:text-white transition-colors duration-300">support@voicenotescribe.com</span>
-              </div>
-              <div className="flex items-center space-x-4 p-3 bg-gray-800/50 rounded-xl hover:bg-gray-800/70 transition-all duration-300 group">
-                <div className="p-2 bg-green-500/20 rounded-lg group-hover:bg-green-500/30 transition-all duration-300">
-                  <Phone className="w-5 h-5 text-green-400" />
-                </div>
-                <span className="text-gray-300 group-hover:text-white transition-colors duration-300">+1 (123) 456-7890</span>
-              </div>
-              <div className="flex items-center space-x-4 p-3 bg-gray-800/50 rounded-xl hover:bg-gray-800/70 transition-all duration-300 group">
-                <div className="p-2 bg-purple-500/20 rounded-lg group-hover:bg-purple-500/30 transition-all duration-300">
-                  <MapPin className="w-5 h-5 text-purple-400" />
-                </div>
-                <span className="text-gray-300 group-hover:text-white transition-colors duration-300">123 Tech Street, Digital City</span>
               </div>
             </div>
           </div>
