@@ -26,13 +26,17 @@ let server;
 // Security middleware
 app.use(helmet());
 
-// Rate limiting to prevent abuse
+// Rate limiting to prevent abuse and CPU overload
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: process.env.NODE_ENV === 'production' ? 100 : 1000, // Limit each IP to 100 requests per windowMs in production
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip successful requests to reduce memory usage
+  skipSuccessfulRequests: false,
+  // Skip failed requests to prevent abuse
+  skipFailedRequests: false,
 });
 
 // Apply rate limiting to all API routes
@@ -43,6 +47,8 @@ const webhookLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 20, // 20 requests per minute per IP
   message: 'Too many webhook requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 app.use('/api/webhook/', webhookLimiter);
@@ -245,14 +251,37 @@ const startServer = async () => {
     server.keepAliveTimeout = 65000; // 65 seconds (just above most load balancers)
     server.headersTimeout = 66000; // 66 seconds (should be > keepAliveTimeout)
     
-    // Set request timeout
-    server.timeout = 300000; // 5 minutes for long-running requests (like file uploads)
+    // Set request timeout - reduced to prevent long-running requests from consuming resources
+    server.timeout = 120000; // 2 minutes (reduced from 5 minutes)
+    
+    // Set max listeners to prevent memory leaks
+    server.setMaxListeners(20);
 
     return server;
   } catch (error) {
     process.exit(1);
   }
 };
+
+// Add process-level resource limits and monitoring
+if (process.env.NODE_ENV === 'production') {
+  // Monitor memory usage and restart if it gets too high
+  setInterval(() => {
+    const used = process.memoryUsage();
+    const heapUsedMB = used.heapUsed / 1024 / 1024;
+    const heapTotalMB = used.heapTotal / 1024 / 1024;
+    
+    // Log memory usage (can be removed in production or sent to monitoring service)
+    if (heapUsedMB > 500) { // If using more than 500MB
+      console.warn(`⚠️ High memory usage: ${heapUsedMB.toFixed(2)}MB / ${heapTotalMB.toFixed(2)}MB`);
+    }
+    
+    // Force garbage collection if available (requires --expose-gc flag)
+    if (global.gc && heapUsedMB > 400) {
+      global.gc();
+    }
+  }, 60000); // Check every minute
+}
 
 // Start the server
 if (require.main === module) {

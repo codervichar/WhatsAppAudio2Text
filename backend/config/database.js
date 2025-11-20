@@ -11,19 +11,19 @@ const dbConfig = {
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   waitForConnections: true,
-  connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 20, // Increased from 10 to 20
-  queueLimit: 0,
+  connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 10, // Reduced to prevent connection exhaustion
+  queueLimit: 50, // Limit queue to prevent memory issues (was 0 = unlimited)
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
   // Connection timeout in milliseconds
-  connectTimeout: 60000, // 60 seconds
+  connectTimeout: 30000, // Reduced to 30 seconds
   // Timeout for queries
-  timeout: 60000, // 60 seconds
+  timeout: 30000, // Reduced to 30 seconds
   // Multiple statements not allowed for security
   multipleStatements: false,
   // Use connection pooling efficiently
-  maxIdle: 10, // Maximum idle connections
-  idleTimeout: 300000, // Close idle connections after 5 minutes
+  maxIdle: 5, // Reduced maximum idle connections
+  idleTimeout: 180000, // Close idle connections after 3 minutes (reduced from 5)
 };
 
 // Create connection pool
