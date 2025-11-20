@@ -23,10 +23,15 @@ const PORT = process.env.PORT || 5000;
 // Declare server variable at module level for graceful shutdown
 let server;
 
+// Trust proxy - IMPORTANT for rate limiting behind reverse proxy/load balancer
+// This fixes the ERR_ERL_UNEXPECTED_X_FORWARDED_FOR error
+app.set('trust proxy', true);
+
 // Security middleware
 app.use(helmet());
 
 // Rate limiting to prevent abuse and CPU overload
+// Note: app.set('trust proxy', true) above handles proxy trust for rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: process.env.NODE_ENV === 'production' ? 100 : 1000, // Limit each IP to 100 requests per windowMs in production
@@ -36,7 +41,7 @@ const limiter = rateLimit({
   // Skip successful requests to reduce memory usage
   skipSuccessfulRequests: false,
   // Skip failed requests to prevent abuse
-  skipFailedRequests: false,
+  skipFailedRequests: false
 });
 
 // Apply rate limiting to all API routes
@@ -48,7 +53,7 @@ const webhookLimiter = rateLimit({
   max: 20, // 20 requests per minute per IP
   message: 'Too many webhook requests, please try again later.',
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders: false
 });
 
 app.use('/api/webhook/', webhookLimiter);

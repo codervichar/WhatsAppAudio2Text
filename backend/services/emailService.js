@@ -16,7 +16,21 @@ const createTransporter = () => {
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
-    }
+    },
+    // Connection timeout settings to prevent hanging connections
+    connectionTimeout: 10000, // 10 seconds to establish connection
+    greetingTimeout: 10000, // 10 seconds to receive greeting
+    socketTimeout: 10000, // 10 seconds for socket inactivity
+    // Retry configuration
+    pool: false, // Disable connection pooling for better error handling
+    // Additional options for better reliability
+    tls: {
+      // Do not fail on invalid certificates (useful for self-signed certs)
+      rejectUnauthorized: false
+    },
+    // Debug mode (only in development)
+    debug: process.env.NODE_ENV === 'development',
+    logger: process.env.NODE_ENV === 'development'
   });
 };
 
