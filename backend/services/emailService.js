@@ -8,7 +8,7 @@ const createTransporter = () => {
   }
 
   const port = parseInt(process.env.SMTP_PORT) || 587;
-  
+
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: port,
@@ -34,7 +34,7 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
     await transporter.verify();
 
     // Password reset URL - adjust this to match your frontend URL
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
+    const resetUrl = `${process.env.FRONTEND_URL || 'https://voicenotescribe.com'}/reset-password?token=${resetToken}`;
 
     const mailOptions = {
       from: `"voicenotescribe" <${process.env.SMTP_USER}>`,
@@ -119,7 +119,7 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
 
   } catch (error) {
     console.error('Error sending password reset email via SMTP:', error);
-    
+
     // Provide more specific error messages
     let errorMessage = error.message;
     if (error.code === 'EAUTH') {
@@ -129,7 +129,7 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
     } else if (error.message.includes('SMTP configuration is missing')) {
       errorMessage = error.message;
     }
-    
+
     return { success: false, error: errorMessage };
   }
 };
@@ -138,23 +138,23 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
 const sendContactFormEmail = async (contactData) => {
   try {
     const { name, email, subject, message, ticketId } = contactData;
-    
+
     // Validate required fields
     if (!name || !email || !subject || !message) {
       throw new Error('Missing required contact form fields');
     }
-    
+
     if (!email.includes('@')) {
       throw new Error('Invalid email address');
     }
-    
+
     const transporter = createTransporter();
-    
+
     // Verify transporter connection
     await transporter.verify();
-    
+
     const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
-    
+
     const mailOptions = {
       from: `"${name}" <${process.env.SMTP_USER}>`,
       to: adminEmail,
@@ -263,7 +263,7 @@ const sendContactFormEmail = async (contactData) => {
 
   } catch (error) {
     console.error('Error sending contact form email:', error);
-    
+
     // Provide more specific error messages
     let errorMessage = error.message;
     if (error.code === 'EAUTH') {
@@ -273,7 +273,7 @@ const sendContactFormEmail = async (contactData) => {
     } else if (error.message.includes('SMTP configuration is missing')) {
       errorMessage = error.message;
     }
-    
+
     return { success: false, error: errorMessage };
   }
 };
