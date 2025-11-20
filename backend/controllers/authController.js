@@ -323,10 +323,10 @@ const forgotPassword = async (req, res) => {
     );
 
     if (users.length === 0) {
-      // Return success even if user doesn't exist (security best practice)
-      return res.json({
-        success: true,
-        message: 'If an account with that email exists, we have sent a password reset link.'
+      // Return error if email doesn't exist
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email address. Please check your email and try again.'
       });
     }
 

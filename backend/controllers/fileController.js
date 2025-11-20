@@ -45,12 +45,7 @@ async function deepgramTranscribeFile(transcriptionId, filePath, language = 'en'
       throw new Error('S3 not configured');
     }
 
-    // Read the file with size limit check
-    const stats = await fs.stat(filePath);
-    if (stats.size > 100 * 1024 * 1024) { // 100MB limit
-      throw new Error('File size exceeds maximum allowed size (100MB)');
-    }
-    
+    // Read the file
     const fileBuffer = await fs.readFile(filePath);
     const fileName = path.basename(filePath);
     
@@ -139,17 +134,10 @@ const uploadFile = async (req, res) => {
     }
 
     // Get audio duration to check minutes before processing
-    // Add timeout to prevent CPU-intensive operations from hanging
     let duration = 0;
     try {
       const mm = require('music-metadata');
-      // Use Promise.race to timeout metadata parsing if it takes too long
-      const parsePromise = mm.parseFile(file.path);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000)
-      );
-      
-      const metadata = await Promise.race([parsePromise, timeoutPromise]);
+      const metadata = await mm.parseFile(file.path);
       duration = metadata.format.duration || 0;
     } catch (err) {
       console.log('⚠️ Could not get audio duration, proceeding with 0 duration');

@@ -141,14 +141,8 @@ const verifyWebhook = (req, res) => {
 };
 
 const handleWhatsAppMessage = async (req, res) => {
-  // Set response timeout to prevent hanging requests
-  res.setTimeout(120000, () => {
-    if (!res.headersSent) {
-      res.status(408).json({ error: 'Request timeout' });
-    }
-  });
-
   try {
+
     // Twilio credentials
     const accountSid = process.env.TWILIO_SID;
     const authToken = process.env.TWILIO_AUTH;
@@ -188,17 +182,11 @@ const handleWhatsAppMessage = async (req, res) => {
     const mediaResponse = await axiosWithTimeout.get(mediaUrl, {
       responseType: 'arraybuffer',
       auth: { username: accountSid, password: authToken },
-      timeout: 60000, // Reduced to 1 minute to prevent long-running requests
-      maxContentLength: 50 * 1024 * 1024, // Reduced to 50MB max file size
-      maxBodyLength: 50 * 1024 * 1024
+      timeout: 120000, // 2 minutes for media download (can be large files)
+      maxContentLength: 100 * 1024 * 1024, // 100MB max file size
+      maxBodyLength: 100 * 1024 * 1024
     });
     const audioBuffer = Buffer.from(mediaResponse.data);
-    
-    // Immediately release memory reference if buffer is too large
-    if (audioBuffer.length > 10 * 1024 * 1024) {
-      // For large files, process in chunks or stream if possible
-      // This prevents holding entire file in memory
-    }
 
     // Detect file type
     const type = await fileType.fromBuffer(audioBuffer);
@@ -209,16 +197,10 @@ const handleWhatsAppMessage = async (req, res) => {
     const extension = type.ext;
     const mimeType = type.mime;
 
-    // Get duration (if audio) with timeout to prevent CPU-intensive operations from hanging
+    // Get duration (if audio)
     let duration = 0;
     try {
-      // Use Promise.race to timeout metadata parsing if it takes too long
-      const parsePromise = mm.parseBuffer(audioBuffer, type.mime);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Metadata parsing timeout')), 30000)
-      );
-      
-      const metadata = await Promise.race([parsePromise, timeoutPromise]);
+      const metadata = await mm.parseBuffer(audioBuffer, type.mime);
       duration = metadata.format.duration || 0;
     } catch (err) {
       await sendWhatsAppReply(req.body.From, 'Sorry, we are unable to transcribe this message');
@@ -379,13 +361,6 @@ const handleWhatsAppMessage = async (req, res) => {
 
 // Handle Deepgram transcription callback
 const handleDeepgramCallback = async (req, res) => {
-  // Set response timeout to prevent hanging requests
-  res.setTimeout(60000, () => {
-    if (!res.headersSent) {
-      res.status(408).json({ success: false, message: 'Request timeout' });
-    }
-  });
-
   try {
     // Get raw data from request body
     const data = req.body;
@@ -570,15 +545,15 @@ const handleDeepgramCallback = async (req, res) => {
        } else {
        }
     } else {
-      // Log error to local file asynchronously to prevent blocking event loop
-      const fs = require('fs').promises;
+      // Log error to local file (equivalent to PHP's Storage::disk('local')->put)
+      const fs = require('fs');
       const path = require('path');
       
-      // Use async file operations to prevent blocking
-      fs.writeFile(path.join(__dirname, '../logs/deepgramTranscriptError.txt'), 'The transcript JSON file not uploaded on S3.')
-        .catch(() => {}); // Silently fail if log directory doesn't exist
-      fs.writeFile(path.join(__dirname, `../logs/${requestId}-result.txt`), JSON.stringify(data))
-        .catch(() => {}); // Silently fail if log directory doesn't exist
+      try {
+        fs.writeFileSync(path.join(__dirname, '../logs/deepgramTranscriptError.txt'), 'The transcript JSON file not uploaded on S3.');
+        fs.writeFileSync(path.join(__dirname, `../logs/${requestId}-result.txt`), JSON.stringify(data));
+      } catch (writeError) {
+      }
     }
     
     // Send 200 OK response

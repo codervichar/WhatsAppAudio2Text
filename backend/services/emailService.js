@@ -1,57 +1,38 @@
+require('dotenv').config();
 const nodemailer = require('nodemailer');
 
 // Create reusable transporter object using SMTP transport
 const createTransporter = () => {
-  // Validate SMTP configuration
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    throw new Error('SMTP configuration is missing. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.');
-  }
-
-  const port = parseInt(process.env.SMTP_PORT) || 587;
-
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: port,
-    secure: port === 465, // true for 465 (SSL), false for other ports (STARTTLS)
+    port: process.env.SMTP_PORT || 587,
+    secure: false,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
-    },
-    // Connection timeout settings to prevent hanging connections
-    connectionTimeout: 10000, // 10 seconds to establish connection
-    greetingTimeout: 10000, // 10 seconds to receive greeting
-    socketTimeout: 10000, // 10 seconds for socket inactivity
-    // Retry configuration
-    pool: false, // Disable connection pooling for better error handling
-    // Additional options for better reliability
-    tls: {
-      // Do not fail on invalid certificates (useful for self-signed certs)
-      rejectUnauthorized: false
-    },
-    // Debug mode (only in development)
-    debug: process.env.NODE_ENV === 'development',
-    logger: process.env.NODE_ENV === 'development'
+    }
   });
+};
+
+// Get the from email address - must match SMTP_USER for AWS SES and similar services
+const getFromEmail = () => {
+  // Use FROM_EMAIL if set, otherwise fall back to SMTP_USER
+  // This ensures the from address matches the authenticated email
+  return process.env.SMTP_USER;
 };
 
 // Send password reset email
 const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => {
   try {
-    // Validate email parameter
-    if (!email || !email.includes('@')) {
-      throw new Error('Invalid email address');
-    }
-
     const transporter = createTransporter();
 
-    // Verify transporter connection
-    await transporter.verify();
+    console.log('transporter', transporter);
 
     // Password reset URL - adjust this to match your frontend URL
-    const resetUrl = `${process.env.FRONTEND_URL || 'https://voicenotescribe.com'}/reset-password?token=${resetToken}`;
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
     const mailOptions = {
-      from: `"voicenotescribe" <${process.env.SMTP_USER}>`,
+      from: `"voicenotescribe" <${getFromEmail()}>`,
       to: email,
       subject: 'Password Reset Request - voicenotescribe',
       html: `
@@ -133,44 +114,21 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
 
   } catch (error) {
     console.error('Error sending password reset email via SMTP:', error);
-
-    // Provide more specific error messages
-    let errorMessage = error.message;
-    if (error.code === 'EAUTH') {
-      errorMessage = 'SMTP authentication failed. Please check your SMTP_USER and SMTP_PASS credentials.';
-    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
-      errorMessage = 'Failed to connect to SMTP server. Please check your SMTP_HOST and SMTP_PORT settings.';
-    } else if (error.message.includes('SMTP configuration is missing')) {
-      errorMessage = error.message;
-    }
-
-    return { success: false, error: errorMessage };
+    return { success: false, error: error.message };
   }
 };
 
 // Send contact form email to admin
 const sendContactFormEmail = async (contactData) => {
   try {
-    const { name, email, subject, message, ticketId } = contactData;
-
-    // Validate required fields
-    if (!name || !email || !subject || !message) {
-      throw new Error('Missing required contact form fields');
-    }
-
-    if (!email.includes('@')) {
-      throw new Error('Invalid email address');
-    }
-
     const transporter = createTransporter();
 
-    // Verify transporter connection
-    await transporter.verify();
-
-    const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+    const { name, email, subject, message, ticketId } = contactData;
+    console.log('contactData', contactData);
+    const adminEmail = process.env.ADMIN_EMAIL || 'support@voicenotescribe.com';
 
     const mailOptions = {
-      from: `"${name}" <${process.env.SMTP_USER}>`,
+      from: `"${name}" <${getFromEmail()}>`,
       to: adminEmail,
       replyTo: email,
       subject: `Contact Form: ${subject} - voicenotescribe`,
@@ -277,18 +235,7 @@ const sendContactFormEmail = async (contactData) => {
 
   } catch (error) {
     console.error('Error sending contact form email:', error);
-
-    // Provide more specific error messages
-    let errorMessage = error.message;
-    if (error.code === 'EAUTH') {
-      errorMessage = 'SMTP authentication failed. Please check your SMTP_USER and SMTP_PASS credentials.';
-    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
-      errorMessage = 'Failed to connect to SMTP server. Please check your SMTP_HOST and SMTP_PORT settings.';
-    } else if (error.message.includes('SMTP configuration is missing')) {
-      errorMessage = error.message;
-    }
-
-    return { success: false, error: errorMessage };
+    return { success: false, error: error.message };
   }
 };
 
