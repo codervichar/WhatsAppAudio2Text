@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const { testConnection } = require('./config/database');
@@ -19,8 +20,32 @@ const contactRoutes = require('./routes/contact');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Declare server variable at module level for graceful shutdown
+let server;
+
 // Security middleware
 app.use(helmet());
+
+// Rate limiting to prevent abuse
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // Limit each IP to 100 requests per windowMs in production
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiting to all API routes
+app.use('/api/', limiter);
+
+// Stricter rate limiting for webhook endpoints
+const webhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 20, // 20 requests per minute per IP
+  message: 'Too many webhook requests, please try again later.',
+});
+
+app.use('/api/webhook/', webhookLimiter);
 
 // CORS configuration
 const corsOptions = {
@@ -39,7 +64,6 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -79,16 +103,13 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// Debug middleware for API requests
-app.use((req, res, next) => {
-  console.log(`🔍 ${req.method} ${req.originalUrl} - ${new Date().toISOString()}`);
-  console.log(`📋 Headers:`, {
-    'user-agent': req.headers['user-agent'],
-    'origin': req.headers['origin'],
-    'authorization': req.headers['authorization'] ? 'Bearer [HIDDEN]' : 'None'
+// Debug middleware for API requests - only in development
+if (process.env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    console.log(`🔍 ${req.method} ${req.originalUrl} - ${new Date().toISOString()}`);
+    next();
   });
-  next();
-});
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -135,7 +156,6 @@ app.use('*', (req, res) => {
 
 // Global error handler
 app.use((error, req, res, next) => {
-  console.error('Global error handler:', error);
 
   // Multer errors
   if (error.code === 'LIMIT_FILE_SIZE') {
@@ -183,22 +203,30 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    console.log('💀 HTTP server closed');
-    process.exit(0);
-  });
-});
+// Graceful shutdown handlers
+const gracefulShutdown = (signal) => {
+  return () => {
+    if (server) {
+      server.close(() => {
+        // Close database pool
+        const { pool } = require('./config/database');
+        pool.end(() => {
+          process.exit(0);
+        });
+      });
+      
+      // Force close after 10 seconds
+      setTimeout(() => {
+        process.exit(1);
+      }, 10000);
+    } else {
+      process.exit(0);
+    }
+  };
+};
 
-process.on('SIGINT', () => {
-  console.log('🛑 SIGINT signal received: closing HTTP server');
-  server.close(() => {
-    console.log('💀 HTTP server closed');
-    process.exit(0);
-  });
-});
+process.on('SIGTERM', gracefulShutdown('SIGTERM'));
+process.on('SIGINT', gracefulShutdown('SIGINT'));
 
 // Start server
 const startServer = async () => {
@@ -209,17 +237,19 @@ const startServer = async () => {
     // Initialize database tables
     // await initializeDatabase();
 
-    // Start the server
-    const server = app.listen(PORT, () => {
-      console.log(`🚀 Server is running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`📊 Health check: http://localhost:${PORT}/health`);
-      console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+    // Start the server with timeouts
+    server = app.listen(PORT, () => {
     });
+
+    // Configure server timeouts to prevent resource exhaustion
+    server.keepAliveTimeout = 65000; // 65 seconds (just above most load balancers)
+    server.headersTimeout = 66000; // 66 seconds (should be > keepAliveTimeout)
+    
+    // Set request timeout
+    server.timeout = 300000; // 5 minutes for long-running requests (like file uploads)
 
     return server;
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 };

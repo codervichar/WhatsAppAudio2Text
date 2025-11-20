@@ -7,17 +7,28 @@ const { v4: uuidv4 } = require('uuid');
 const { deductMinutesFromSubscription } = require('../utils/subscriptionUtils');
 require('dotenv').config();
 
+// Configure axios defaults with timeouts to prevent hanging requests
+const axiosConfig = {
+  timeout: 30000, // 30 seconds timeout
+  headers: {
+    'User-Agent': 'WhatsApp-Audio2Text/1.0'
+  }
+};
+
+// Create axios instances with timeouts
+const axiosWithTimeout = axios.create(axiosConfig);
+
+// Logging removed for performance optimization
+
 // TODO: Add Twilio send message helper
 
 // Deepgram transcription callback function - Reverted to URL-based approach
 async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, speakerIdentification, isSubscribed) {
   try {
-    console.log('--------------------------------deepgramTranscriptCallback--------------------------------');
     const apiKey = process.env.DEEPGRAM_API_KEY;
     // Use the full webhook URL from environment variable
     const callBackUrl = process.env.DEEPGRAM_CALLBACK_URL || `${process.env.APP_URL || 'https://api.voicenotescribe.com'}/api/webhook/deepgram/hook`;
     
-    console.log('Deepgram callback URL:', callBackUrl);
     const apiUrl = 'https://api.deepgram.com/v1/listen';
     
     let queryString = '';
@@ -47,18 +58,18 @@ async function deepgramTranscriptCallback(transactionId, language, s3FileUrl, sp
       url: s3FileUrl
     };
 
-    // Make request to Deepgram
-    const response = await axios.post(fullApiUrl, requestBody, { headers });
+    // Make request to Deepgram with timeout
+    const response = await axiosWithTimeout.post(fullApiUrl, requestBody, { 
+      headers,
+      timeout: 15000 // 15 seconds for Deepgram API
+    });
     
     if (response.data && response.data.request_id) {
-      console.log('Deepgram transcription request successful:', response.data);
       return response.data.request_id;
     } else {
-      console.error('Deepgram API returned no response or no request_id');
       return null;
     }
   } catch (error) {
-    console.error('Deepgram transcription callback error:', error);
     return null;
   }
 }
@@ -86,7 +97,7 @@ async function sendWhatsAppReply(to, messageBody) {
   const from = 'whatsapp:' + process.env.TWILIO_PHONENUMBER;
 
   try {
-    const response = await axios.post(
+    const response = await axiosWithTimeout.post(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
       new URLSearchParams({
         To: to,
@@ -95,18 +106,16 @@ async function sendWhatsAppReply(to, messageBody) {
       }),
       {
         auth: { username: accountSid, password: authToken },
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 10000 // 10 seconds for Twilio API
       }
     );
     if (response.status === 201) {
-      console.log('sendWhatsAppReply successfully');
       return 'Message sent successfully!';
     } else {
-      console.log('sendWhatsAppReply failed', response.data);
       return 'Failed to send message. Response: ' + JSON.stringify(response.data);
     }
   } catch (error) {
-    console.log('sendWhatsAppReply error', error.response?.data || error.message);
     return 'Failed to send message. Error: ' + (error.response?.data || error.message);
   }
 }
@@ -122,22 +131,17 @@ const verifyWebhook = (req, res) => {
 
   if (mode && token) {
     if (mode === 'subscribe' && token === verifyToken) {
-      console.log('Webhook verified successfully');
       res.status(200).send(challenge);
     } else {
-      console.log('Webhook verification failed');
       res.sendStatus(403);
     }
   } else {
-    console.log('Webhook verification parameters missing');
     res.sendStatus(400);
   }
 };
 
 const handleWhatsAppMessage = async (req, res) => {
   try {
-    // Log the request
-    console.log('Twilio request received', req.body);
 
     // Twilio credentials
     const accountSid = process.env.TWILIO_SID;
@@ -146,61 +150,26 @@ const handleWhatsAppMessage = async (req, res) => {
     // Sender phone number
     const senderPhoneNumber = req.body.From; // e.g., 'whatsapp:+14155552671'
     const justPhoneNumber = senderPhoneNumber.replace('whatsapp:', '');
+    const cleanNumber = justPhoneNumber.replace(/^\+/, ''); // Remove leading +
     
-    // Try to find user by the full phone number first (with country code)
-    console.log('🔍 Searching for user with phone number:', justPhoneNumber);
-    let [users] = await pool.execute(`
+    // Optimized: Single query with OR conditions instead of 3 sequential queries
+    // This significantly reduces database load and improves performance
+    const [users] = await pool.execute(`
       SELECT u.*, c.phonecode 
       FROM users u 
       LEFT JOIN country c ON u.country_code = c.id 
-      WHERE u.wtp_number = ?
-    `, [justPhoneNumber]);
-    
-    console.log('📱 First search result:', users.length, 'users found');
-    
-    // If not found, try to find by wtp_number without country code
-    if (users.length === 0) {
-      // Remove potential country code from the incoming number and try to match
-      const cleanNumber = justPhoneNumber.replace(/^\+/, ''); // Remove leading +
-      console.log('🔍 Trying with clean number (no +):', cleanNumber);
-      
-      [users] = await pool.execute(`
-        SELECT u.*, c.phonecode 
-        FROM users u 
-        LEFT JOIN country c ON u.country_code = c.id 
-        WHERE u.wtp_number = ?
-      `, [cleanNumber]);
-      
-      console.log('📱 Second search result:', users.length, 'users found');
-      
-      // If still not found, try to match by constructing full number with country code
-      if (users.length === 0) {
-        console.log('🔍 Trying to match with constructed full number');
-        [users] = await pool.execute(`
-          SELECT u.*, c.phonecode 
-          FROM users u 
-          LEFT JOIN country c ON u.country_code = c.id 
-          WHERE CONCAT('+', c.phonecode, u.wtp_number) = ?
-        `, [justPhoneNumber]);
-        
-        console.log('📱 Third search result:', users.length, 'users found');
-      }
-    }
+      WHERE u.wtp_number = ? 
+         OR u.wtp_number = ?
+         OR CONCAT('+', COALESCE(c.phonecode, ''), u.wtp_number) = ?
+      LIMIT 1
+    `, [justPhoneNumber, cleanNumber, justPhoneNumber]);
     
     const user = users[0];
     if (!user) {
-      console.log('❌ No user found for phone number:', justPhoneNumber);
       await sendWhatsAppReply(req.body.From, 'Phone number not registered new API. Please visit voicenotescribe.com and register your phone number.');
       return res.status(400).json({ error: 'Phone number not registered' });
     }
     
-    console.log('✅ User found:', {
-      id: user.id,
-      name: user.first_name + ' ' + user.last_name,
-      wtp_number: user.wtp_number,
-      country_code: user.country_code,
-      phonecode: user.phonecode
-    });
 
     const mediaUrl = req.body.MediaUrl0;
     if (!mediaUrl) {
@@ -209,9 +178,13 @@ const handleWhatsAppMessage = async (req, res) => {
     }
 
     // Download media file with Twilio basic auth to get duration first
-    const mediaResponse = await axios.get(mediaUrl, {
+    // Add timeout to prevent hanging on large/slow downloads
+    const mediaResponse = await axiosWithTimeout.get(mediaUrl, {
       responseType: 'arraybuffer',
       auth: { username: accountSid, password: authToken },
+      timeout: 120000, // 2 minutes for media download (can be large files)
+      maxContentLength: 100 * 1024 * 1024, // 100MB max file size
+      maxBodyLength: 100 * 1024 * 1024
     });
     const audioBuffer = Buffer.from(mediaResponse.data);
 
@@ -239,12 +212,10 @@ const handleWhatsAppMessage = async (req, res) => {
     const minutesCheck = await checkUserMinutes(user.id, duration);
     
     if (!minutesCheck.success) {
-      console.log(`❌ Insufficient minutes for user ${user.id}: ${minutesCheck.message}`);
       await sendWhatsAppReply(req.body.From, `Insufficient minutes remaining. You have ${minutesCheck.remaining.toFixed(2)} minutes left but need ${minutesCheck.required.toFixed(2)} minutes for this file. Please upgrade your plan.`);
       return res.status(403).json({ error: 'Insufficient minutes remaining' });
     }
     
-    console.log(`✅ Minutes check passed: ${minutesCheck.remaining.toFixed(2)} minutes remaining, ${minutesCheck.required.toFixed(2)} minutes required`);
 
     // Get language code
     let languageCode = 'en';
@@ -275,9 +246,6 @@ const handleWhatsAppMessage = async (req, res) => {
     const tempFilePath = `${unique}/${tempFileName}`;
     const tempBucketUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${tempFilePath}`;
     
-    console.log('📁 Uploading audio file to S3 (temporary location)...');
-    console.log('📂 File Path:', tempFilePath);
-    console.log('📊 File Size:', audioBuffer.length, 'bytes');
     
     await s3.putObject({
       Bucket: process.env.AWS_BUCKET,
@@ -286,34 +254,21 @@ const handleWhatsAppMessage = async (req, res) => {
       ContentType: mimeType,
     }).promise();
     
-    console.log('✅ Audio file uploaded to S3 successfully (temporary)');
-    console.log('🔗 S3 URL:', tempBucketUrl);
 
     // Call Deepgram transcription callback to get request_id
     let requestId = null;
     try {
-      console.log('🚀 Calling Deepgram API with S3 URL...');
       requestId = await deepgramTranscriptCallback(unique, languageCode, tempBucketUrl, 'No', user.is_subscribed || false);
-      console.log(`Deepgram transcription initiated, request ID: ${requestId}`);
-      console.log(`Request ID type: ${typeof requestId}, value: ${JSON.stringify(requestId)}`);
       
       // Validate requestId
       if (!requestId || typeof requestId !== 'string' || requestId.trim() === '') {
-        console.error('❌ Invalid requestId received:', requestId);
         requestId = null;
       } else {
-        console.log('✅ Valid requestId received:', requestId);
-        
         // Move the audio file to the requestId folder to match the JSON file location
-        console.log('🔄 Moving audio file to match requestId folder...');
         const finalFileName = `WA-${requestId}.${extension}`;
         const finalFilePath = `${requestId}/${finalFileName}`;
         
         try {
-          console.log('📋 File movement details:');
-          console.log('  Source:', tempFilePath);
-          console.log('  Destination:', finalFilePath);
-          console.log('  Bucket:', process.env.AWS_BUCKET);
           
           // Copy the file to the new location
           await s3.copyObject({
@@ -322,17 +277,13 @@ const handleWhatsAppMessage = async (req, res) => {
             Key: finalFilePath
           }).promise();
           
-          console.log('✅ Audio file copied to:', finalFilePath);
-          
           // Verify the copy was successful by checking if the file exists
           try {
             await s3.headObject({
               Bucket: process.env.AWS_BUCKET,
               Key: finalFilePath
             }).promise();
-            console.log('✅ Verified: New audio file exists in S3');
           } catch (verifyError) {
-            console.error('❌ Verification failed: New audio file not found in S3');
             throw verifyError;
           }
           
@@ -342,7 +293,6 @@ const handleWhatsAppMessage = async (req, res) => {
             Key: tempFilePath
           }).promise();
           
-          console.log('🗑️ Original audio file deleted from:', tempFilePath);
           
           // Update variables for database storage
           fileName = finalFileName;
@@ -350,9 +300,6 @@ const handleWhatsAppMessage = async (req, res) => {
           bucketUrl = `https://${process.env.AWS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${finalFilePath}`;
           
         } catch (moveError) {
-          console.error('❌ Error moving audio file:', moveError.message);
-          console.error('❌ Error code:', moveError.code);
-          console.error('❌ Continuing with original file path');
           // Continue with original file path if move fails
           fileName = tempFileName;
           filePath = tempFilePath;
@@ -360,7 +307,6 @@ const handleWhatsAppMessage = async (req, res) => {
         }
       }
     } catch (deepgramError) {
-      console.error('Deepgram transcription callback failed:', deepgramError);
       requestId = null;
       // Use temporary file path if Deepgram fails
       fileName = tempFileName;
@@ -371,50 +317,24 @@ const handleWhatsAppMessage = async (req, res) => {
     // Store transcript info in DB using existing transcriptions table
     let insertResult;
     
-    // Log all the data being inserted
-    console.log('=== INSERT DATA DEBUG ===');
-    console.log('user.id:', user.id, 'type:', typeof user.id);
-    console.log('fileName:', fileName, 'type:', typeof fileName);
-    console.log('filePath:', filePath, 'type:', typeof filePath);
-    console.log('bucketUrl:', bucketUrl, 'type:', typeof bucketUrl);
-    console.log('audioBuffer.length:', audioBuffer.length, 'type:', typeof audioBuffer.length);
-    console.log('mimeType:', mimeType, 'type:', typeof mimeType);
-    console.log('formatDuration(duration):', formatDuration(duration), 'type:', typeof formatDuration(duration));
-    console.log('languageCode:', languageCode, 'type:', typeof languageCode);
-    console.log('requestId:', requestId, 'type:', typeof requestId);
-    console.log('senderPhoneNumber:', senderPhoneNumber, 'type:', typeof senderPhoneNumber);
-    console.log('========================');
     
     try {
       // Only try with request_id if we have a valid requestId
       if (requestId && typeof requestId === 'string' && requestId.trim() !== '') {
-        console.log('Attempting to insert with request_id:', requestId);
-        
         const insertQuery = 'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, request_id, from_wa, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())';
         const insertParams = [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode, requestId, senderPhoneNumber];
         
-        console.log('INSERT Query:', insertQuery);
-        console.log('INSERT Params:', insertParams);
-        
         [insertResult] = await pool.execute(insertQuery, insertParams);
-        console.log(`✅ Transcription record created with ID: ${insertResult.insertId}, request ID: ${requestId}`);
       } else {
-        console.log('⚠️ No valid requestId, using fallback INSERT without request_id');
         throw new Error('No valid requestId');
       }
     } catch (columnError) {
-      console.log('❌ Column error details:', columnError.message);
-      console.log('❌ Error code:', columnError.code);
-      console.log('❌ SQL Message:', columnError.sqlMessage);
-      
       if (columnError.code === 'ER_BAD_FIELD_ERROR') {
-        console.log('New columns not available, using existing schema...');
         // Fallback to existing schema without new columns
         [insertResult] = await pool.execute(
           'INSERT INTO transcriptions (user_id, original_filename, file_path, file_size, mime_type, duration, status, language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
           [user.id, fileName, bucketUrl, audioBuffer.length, mimeType, formatDuration(duration), 'processing', languageCode]
         );
-        console.log(`⚠️ Transcription record created with ID: ${insertResult.insertId} (without request_id)`);
       } else {
         throw columnError;
       }
@@ -435,7 +355,6 @@ const handleWhatsAppMessage = async (req, res) => {
 
     return res.json({ success: true, message: 'File received and in process.' });
   } catch (error) {
-    console.error('handleWhatsAppMessage error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -445,11 +364,9 @@ const handleDeepgramCallback = async (req, res) => {
   try {
     // Get raw data from request body
     const data = req.body;
-    console.log('🎯 Deepgram callback received:', JSON.stringify(data, null, 2));
     
     // Validate if this is a proper Deepgram callback
     if (!data || typeof data !== 'object') {
-      console.log('⚠️ Invalid callback data received');
       return res.status(400).json({ 
         success: false, 
         message: 'Invalid callback data' 
@@ -461,7 +378,6 @@ const handleDeepgramCallback = async (req, res) => {
     
     // Check if this is a test request (common for webhook validation)
     if (!requestId && (!data.metadata || !data.results)) {
-      console.log('🧪 Test webhook request received - responding with success');
       return res.status(200).json({ 
         success: true, 
         message: 'Webhook endpoint is working',
@@ -470,14 +386,12 @@ const handleDeepgramCallback = async (req, res) => {
     }
     
     if (!requestId) {
-      console.error('❌ No request_id found in callback data');
       return res.status(400).json({ 
         success: false, 
         message: 'Missing request_id in callback data' 
       });
     }
     
-    console.log('🔍 Searching for Transcript with request_id:', requestId);
     
     // Find transcript by request_id
     let transcripts;
@@ -488,20 +402,17 @@ const handleDeepgramCallback = async (req, res) => {
       );
     } catch (columnError) {
       if (columnError.code === 'ER_BAD_FIELD_ERROR') {
-        console.log('⚠️ request_id column not available, using fallback method...');
         // Fallback: find the most recent processing record
         [transcripts] = await pool.execute(
           'SELECT * FROM transcriptions WHERE status = ? ORDER BY created_at DESC LIMIT 1',
           ['processing']
         );
       } else {
-        console.error('❌ Database error:', columnError);
         throw columnError;
       }
     }
     
     if (transcripts.length === 0) {
-      console.error('❌ No transcript found for request_id:', requestId);
       return res.status(404).json({ 
         success: false, 
         message: 'Transcript not found',
@@ -512,7 +423,6 @@ const handleDeepgramCallback = async (req, res) => {
     const transcript = transcripts[0];
     const transactionId = transcript.id; // Use id as transaction ID
     
-    console.log(`Found transcript record ID: ${transcript.id} for request_id: ${requestId}`);
     
     // Check if transcription was successful or failed
     const isSuccessful = data.results && 
@@ -532,9 +442,7 @@ const handleDeepgramCallback = async (req, res) => {
       confidenceScore = alternative.confidence || 0;
       wordCount = transcriptText.split(' ').filter(word => word.length > 0).length;
       status = 'completed';
-      console.log('✅ Transcription successful');
     } else {
-      console.log('❌ Transcription failed - no results in response');
       transcriptText = 'Transcription failed - no results available';
     }
     
@@ -554,7 +462,6 @@ const handleDeepgramCallback = async (req, res) => {
       );
     } catch (updateError) {
       if (updateError.code === 'ER_BAD_FIELD_ERROR') {
-        console.log('New columns not available, updating with existing schema...');
         // Fallback: update without new columns
         await pool.execute(
           `UPDATE transcriptions 
@@ -571,45 +478,22 @@ const handleDeepgramCallback = async (req, res) => {
     
     // Only deduct minutes if transcription was successful
     if (status === 'completed' && duration && transcript.user_id) {
-      console.log('💰 Deducting minutes for successful transcription...');
-      console.log(`📊 Deduction details: User ID: ${transcript.user_id}, Duration: ${duration} seconds (${(duration/60).toFixed(2)} minutes)`);
-      
       const deductionResult = await deductMinutesFromSubscription(transcript.user_id, duration);
       
       if (deductionResult.success) {
-        console.log(`✅ Minutes deducted successfully: ${deductionResult.deducted.toFixed(2)} minutes`);
-        console.log(`📊 Remaining minutes: ${deductionResult.remaining.toFixed(2)}`);
-        console.log(`📊 Deduction completed for transcription ID: ${transcript.id}, Request ID: ${requestId}`);
-      } else {
-        console.log(`⚠️ Minute deduction failed: ${deductionResult.message}`);
-        console.log(`📊 Deduction failed for transcription ID: ${transcript.id}, Request ID: ${requestId}`);
         // Note: We don't fail the transcription here, just log the issue
         // The transcription was successful, but minute deduction failed
       }
     } else if (status === 'failed') {
-      console.log('⚠️ Transcription failed - no minutes deducted');
-      console.log(`📊 No deduction for failed transcription ID: ${transcript.id}, Request ID: ${requestId}`);
     } else {
-      console.log('⚠️ Cannot deduct minutes: missing duration or user_id');
-      console.log(`📊 Missing data - Status: ${status}, Duration: ${duration}, User ID: ${transcript.user_id}`);
-      console.log(`📊 No deduction for transcription ID: ${transcript.id}, Request ID: ${requestId}`);
     }
     
     // Upload JSON file to S3 - store in same folder as audio file using requestId
     const fileName = `JSON-${requestId}.json`;
     const filePath = `${requestId}/${fileName}`;
     
-    console.log('------FileName-----', fileName);
-    console.log('------File Path-----', filePath);
-    console.log('------Request ID-----', requestId);
-    
     // Validate AWS credentials
     if (!process.env.AWS_KEY || !process.env.AWS_SECRET || !process.env.AWS_REGION || !process.env.AWS_BUCKET) {
-      console.error('❌ Missing AWS credentials or bucket configuration');
-      console.error('AWS_KEY:', process.env.AWS_KEY ? 'Set' : 'Missing');
-      console.error('AWS_SECRET:', process.env.AWS_SECRET ? 'Set' : 'Missing');
-      console.error('AWS_REGION:', process.env.AWS_REGION ? 'Set' : 'Missing');
-      console.error('AWS_BUCKET:', process.env.AWS_BUCKET ? 'Set' : 'Missing');
     }
     
     const s3 = new AWS.S3({
@@ -627,23 +511,15 @@ const handleDeepgramCallback = async (req, res) => {
         ContentType: 'application/json'
       }).promise();
       
-      console.log('✅ JSON file uploaded to S3 successfully');
-      console.log('📁 S3 Location:', `s3://${process.env.AWS_BUCKET}/${filePath}`);
-      console.log('📊 JSON Size:', JSON.stringify(data).length, 'bytes');
     } catch (s3Error) {
-      console.error('❌ S3 upload error:', s3Error.message);
-      console.error('❌ S3 Error Code:', s3Error.code);
       uploadResult = null;
     }
     
     if (uploadResult) {
       
       const originalFileName = transcript.original_filename;
-      console.log('------originalFileName-----', originalFileName);
-      
-             // Check if this is from WhatsApp
+      // Check if this is from WhatsApp
        if (transcript.from_wa) {
-         console.log('from wa', transcript.from_wa);
          
          try {
                         // Check if transcript text exists in the results
@@ -664,14 +540,11 @@ const handleDeepgramCallback = async (req, res) => {
              await sendWhatsAppReply(transcript.from_wa, "Transcription failed for your WA message.");
            }
          } catch (error) {
-           console.error('Error sending WhatsApp reply:', error);
            await sendWhatsAppReply(transcript.from_wa, "Transcription failed for your WA message.");
          }
        } else {
-         console.log('No from_wa field found, skipping WhatsApp notification');
        }
     } else {
-      console.error('❌ Failed to upload JSON file to S3');
       // Log error to local file (equivalent to PHP's Storage::disk('local')->put)
       const fs = require('fs');
       const path = require('path');
@@ -680,12 +553,10 @@ const handleDeepgramCallback = async (req, res) => {
         fs.writeFileSync(path.join(__dirname, '../logs/deepgramTranscriptError.txt'), 'The transcript JSON file not uploaded on S3.');
         fs.writeFileSync(path.join(__dirname, `../logs/${requestId}-result.txt`), JSON.stringify(data));
       } catch (writeError) {
-        console.error('Failed to write error logs:', writeError);
       }
     }
     
     // Send 200 OK response
-    console.log("✅ Callback processed successfully");
     return res.status(200).json({ 
       success: true, 
       message: 'Callback processed successfully',
@@ -694,7 +565,6 @@ const handleDeepgramCallback = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Deepgram callback error:', error);
     return res.status(500).json({ 
       success: false, 
       message: 'Internal Server Error',
@@ -716,8 +586,6 @@ const testWebhookCallback = async (req, res) => {
       });
     }
     
-    console.log('🧪 Manual webhook callback test triggered');
-    console.log(`📊 Test parameters: Request ID: ${requestId}, Duration: ${duration}, User ID: ${userId}`);
     
     // Find transcript by request_id
     const [transcripts] = await pool.execute(
@@ -739,18 +607,12 @@ const testWebhookCallback = async (req, res) => {
     let status = 'completed';
     
     if (isSuccessful) {
-      console.log('✅ Simulated transcription successful');
-      
       // Deduct minutes
       if (status === 'completed' && duration && transcript.user_id) {
-        console.log('💰 Deducting minutes for successful transcription...');
         const deductionResult = await deductMinutesFromSubscription(transcript.user_id, duration);
         
         if (deductionResult.success) {
-          console.log(`✅ Minutes deducted successfully: ${deductionResult.deducted.toFixed(2)} minutes`);
-          console.log(`📊 Remaining minutes: ${deductionResult.remaining.toFixed(2)}`);
         } else {
-          console.log(`⚠️ Minute deduction failed: ${deductionResult.message}`);
         }
         
         res.json({
@@ -776,7 +638,6 @@ const testWebhookCallback = async (req, res) => {
     }
     
   } catch (error) {
-    console.error('❌ Test webhook callback error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

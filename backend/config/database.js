@@ -1,11 +1,6 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
-console.log("DB_HOST - ", process.env.DB_HOST)
-console.log("DB_PORT - ", process.env.DB_PORT)
-console.log("DB_USER - ", process.env.DB_USER)
-console.log("DB_PASSWORD - ", process.env.DB_PASSWORD)
-console.log("DB_NAME - ", process.env.DB_NAME)
 
 
 // Database configuration
@@ -16,8 +11,19 @@ const dbConfig = {
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+  connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 20, // Increased from 10 to 20
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
+  // Connection timeout in milliseconds
+  connectTimeout: 60000, // 60 seconds
+  // Timeout for queries
+  timeout: 60000, // 60 seconds
+  // Multiple statements not allowed for security
+  multipleStatements: false,
+  // Use connection pooling efficiently
+  maxIdle: 10, // Maximum idle connections
+  idleTimeout: 300000, // Close idle connections after 5 minutes
 };
 
 // Create connection pool
@@ -27,10 +33,8 @@ const pool = mysql.createPool(dbConfig);
 const testConnection = async () => {
   try {
     const connection = await pool.getConnection();
-    console.log('✅ Database connected successfully');
     connection.release();
   } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
     process.exit(1);
   }
 };

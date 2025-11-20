@@ -2,10 +2,17 @@ const nodemailer = require('nodemailer');
 
 // Create reusable transporter object using SMTP transport
 const createTransporter = () => {
+  // Validate SMTP configuration
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error('SMTP configuration is missing. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.');
+  }
+
+  const port = parseInt(process.env.SMTP_PORT) || 587;
+  
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT || 587,
-    secure: false,
+    port: port,
+    secure: port === 465, // true for 465 (SSL), false for other ports (STARTTLS)
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
@@ -16,15 +23,21 @@ const createTransporter = () => {
 // Send password reset email
 const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => {
   try {
+    // Validate email parameter
+    if (!email || !email.includes('@')) {
+      throw new Error('Invalid email address');
+    }
+
     const transporter = createTransporter();
 
-    console.log('transporter', transporter);
+    // Verify transporter connection
+    await transporter.verify();
 
     // Password reset URL - adjust this to match your frontend URL
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
 
     const mailOptions = {
-      from: `"voicenotescribe" <${process.env.SMTP_USER || process.env.MAIL_USERNAME || 'support@voicenotescribe.com'}>`,
+      from: `"voicenotescribe" <${process.env.SMTP_USER}>`,
       to: email,
       subject: 'Password Reset Request - voicenotescribe',
       html: `
@@ -106,17 +119,40 @@ const sendPasswordResetEmail = async (email, resetToken, firstName = 'User') => 
 
   } catch (error) {
     console.error('Error sending password reset email via SMTP:', error);
-    return { success: false, error: error.message };
+    
+    // Provide more specific error messages
+    let errorMessage = error.message;
+    if (error.code === 'EAUTH') {
+      errorMessage = 'SMTP authentication failed. Please check your SMTP_USER and SMTP_PASS credentials.';
+    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      errorMessage = 'Failed to connect to SMTP server. Please check your SMTP_HOST and SMTP_PORT settings.';
+    } else if (error.message.includes('SMTP configuration is missing')) {
+      errorMessage = error.message;
+    }
+    
+    return { success: false, error: errorMessage };
   }
 };
 
 // Send contact form email to admin
 const sendContactFormEmail = async (contactData) => {
   try {
+    const { name, email, subject, message, ticketId } = contactData;
+    
+    // Validate required fields
+    if (!name || !email || !subject || !message) {
+      throw new Error('Missing required contact form fields');
+    }
+    
+    if (!email.includes('@')) {
+      throw new Error('Invalid email address');
+    }
+    
     const transporter = createTransporter();
     
-    const { name, email, subject, message, ticketId } = contactData;
-    console.log('contactData', contactData);
+    // Verify transporter connection
+    await transporter.verify();
+    
     const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
     
     const mailOptions = {
@@ -227,7 +263,18 @@ const sendContactFormEmail = async (contactData) => {
 
   } catch (error) {
     console.error('Error sending contact form email:', error);
-    return { success: false, error: error.message };
+    
+    // Provide more specific error messages
+    let errorMessage = error.message;
+    if (error.code === 'EAUTH') {
+      errorMessage = 'SMTP authentication failed. Please check your SMTP_USER and SMTP_PASS credentials.';
+    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      errorMessage = 'Failed to connect to SMTP server. Please check your SMTP_HOST and SMTP_PORT settings.';
+    } else if (error.message.includes('SMTP configuration is missing')) {
+      errorMessage = error.message;
+    }
+    
+    return { success: false, error: errorMessage };
   }
 };
 
